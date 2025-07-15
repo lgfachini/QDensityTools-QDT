@@ -46,7 +46,7 @@ def _draw_atoms(ax, parser, plane):
         ax.plot(x_pos, y_pos, 'o', color=color, markersize=8)
         ax.text(x_pos + 0.1, y_pos + 0.1, nuc['symbol'], fontsize=10, color=color)
 
-def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, save_dir='.'):
+def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
     xx, yy, points = _generate_grid(parser, plane, z_pos, grid_points)
     density = density_calc.calculate_density(points, parser.data, spin='total')
     density_log = np.log10(density + EPS).reshape(grid_points, grid_points)
@@ -60,20 +60,17 @@ def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, save_dir=
 
     _draw_atoms(ax, parser, plane)
     plt.tight_layout()
-    filename = os.path.join(save_dir, f'density_slice_{plane}_z{z_pos:.2f}.png')
+
+    output_dir = os.path.dirname(parser.filename)
+    filename = os.path.join(output_dir, f'density_slice_{plane}_z{z_pos:.2f}.png')
     plt.savefig(filename, dpi=300)
     plt.close()
 
-def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700, save_dir='.'):
+def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
     xx, yy, points = _generate_grid(parser, plane, z_pos, grid_points)
     density = density_calc.calculate_density(points, parser.data).reshape(grid_points, grid_points)
 
-    # Calcula dx para gradientes
-    if plane == 'xy':
-        dx = (xx[0,1] - xx[0,0])
-    else:
-        dx = (yy[1,0] - yy[0,0])
-
+    dx = (xx[0,1] - xx[0,0]) if plane == 'xy' else (yy[1,0] - yy[0,0])
     d2x = np.gradient(np.gradient(density, axis=0), axis=0) / dx**2
     d2y = np.gradient(np.gradient(density, axis=1), axis=1) / dx**2
     laplacian = d2x + d2y
@@ -91,20 +88,17 @@ def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700, save_di
 
     _draw_atoms(ax, parser, plane)
     plt.tight_layout()
-    filename = os.path.join(save_dir, f'laplacian_slice_{plane}_z{z_pos:.2f}.png')
+
+    output_dir = os.path.dirname(parser.filename)
+    filename = os.path.join(output_dir, f'laplacian_slice_{plane}_z{z_pos:.2f}.png')
     plt.savefig(filename, dpi=300)
     plt.close()
 
-def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700, save_dir='.'):
+def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
     xx, yy, points = _generate_grid(parser, plane, z_pos, grid_points)
     density = density_calc.calculate_density(points, parser.data).reshape(grid_points, grid_points)
 
-    # Calcula dx para gradientes
-    if plane == 'xy':
-        dx = (xx[0,1] - xx[0,0])
-    else:
-        dx = (yy[1,0] - yy[0,0])
-
+    dx = (xx[0,1] - xx[0,0]) if plane == 'xy' else (yy[1,0] - yy[0,0])
     d_rho_dx, d_rho_dy = np.gradient(density, dx, dx)
     grad_mag = np.sqrt(d_rho_dx**2 + d_rho_dy**2) + EPS
     grad_mag_log = np.log10(grad_mag)
@@ -118,17 +112,18 @@ def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700
 
     _draw_atoms(ax, parser, plane)
     plt.tight_layout()
-    filename = os.path.join(save_dir, f'gradient_slice_{plane}_z{z_pos:.2f}.png')
+
+    output_dir = os.path.dirname(parser.filename)
+    filename = os.path.join(output_dir, f'gradient_slice_{plane}_z{z_pos:.2f}.png')
     plt.savefig(filename, dpi=300)
     plt.close()
 
-def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index, points_count=700, save_dir='.'):
+def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index, points_count=700):
     atom1 = parser.data['nuclei'][atom1_index]
     atom2 = parser.data['nuclei'][atom2_index]
 
     coords1 = atom1['coords']
     coords2 = atom2['coords']
-
     vec = coords2 - coords1
     total_dist = np.linalg.norm(vec)
     path_points = np.array([coords1 + t * vec for t in np.linspace(0, 1, points_count)])
@@ -144,7 +139,6 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     def normalize(arr):
         return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + EPS)
 
-    # Apply log10 scaling before normalization
     density_log_norm = normalize(safe_log10(density))
     gradient_log_norm = normalize(safe_log10(gradient))
     laplacian_log_norm = normalize(safe_log10(laplacian))
@@ -159,9 +153,12 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    filename = os.path.join(save_dir, f'density_gradient_laplacian_log_path_{atom1["symbol"]}_{atom2["symbol"]}.png')
+
+    output_dir = os.path.dirname(parser.filename)
+    filename = os.path.join(output_dir, f'density_gradient_laplacian_log_path_{atom1["symbol"]}_{atom2["symbol"]}.png')
     plt.savefig(filename, dpi=300)
     plt.close()
+
 
 def plot_spin_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, save_dir='.'):
     xx, yy, points = _generate_grid(parser, plane, z_pos, grid_points)
