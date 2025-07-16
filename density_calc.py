@@ -14,18 +14,73 @@ def factorial2_numba(n):
 
 @njit(cache=True)
 def angular_momentum_numba(prim_type):
+    # Tabela explícita até G (prim_type 1–35)
+    table = [
+        (0, 0, 0),  # 1  S
+        (1, 0, 0),  # 2  PX
+        (0, 1, 0),  # 3  PY
+        (0, 0, 1),  # 4  PZ
+        (2, 0, 0),  # 5  DXX
+        (0, 2, 0),  # 6  DYY
+        (0, 0, 2),  # 7  DZZ
+        (1, 1, 0),  # 8  DXY
+        (1, 0, 1),  # 9  DXZ
+        (0, 1, 1),  # 10 DYZ
+        (3, 0, 0),  # 11 FXXX
+        (0, 3, 0),  # 12 FYYY
+        (0, 0, 3),  # 13 FZZZ
+        (2, 1, 0),  # 14 FXXY
+        (2, 0, 1),  # 15 FXXZ
+        (0, 2, 1),  # 16 FYYZ
+        (1, 2, 0),  # 17 FXYY
+        (1, 0, 2),  # 18 FXZZ
+        (0, 1, 2),  # 19 FYZZ
+        (1, 1, 1),  # 20 FXYZ
+        (4, 0, 0),  # 21 GXXXX
+        (0, 4, 0),  # 22 GYYYY
+        (0, 0, 4),  # 23 GZZZZ
+        (3, 1, 0),  # 24 GXXXY
+        (3, 0, 1),  # 25 GXXXZ
+        (1, 3, 0),  # 26 GXYYY
+        (0, 3, 1),  # 27 GYYYZ
+        (1, 0, 3),  # 28 GXZZZ
+        (0, 1, 3),  # 29 GYZZZ
+        (2, 2, 0),  # 30 GXXYY
+        (2, 0, 2),  # 31 GXXZZ
+        (0, 2, 2),  # 32 GYYZZ
+        (2, 1, 1),  # 33 GXXYZ
+        (1, 2, 1),  # 34 GXYYZ
+        (1, 1, 2)   # 35 GXYZZ
+    ]
+
     if prim_type < 1:
         return -1, -1, -1
-    idx = 1
-    for grau in range(10):
-        for l in range(grau + 1):
-            for m in range(grau + 1):
-                for n in range(grau + 1):
-                    if l + m + n == grau:
-                        if idx == prim_type:
-                            return l, m, n
+    elif prim_type <= len(table):
+        return table[prim_type - 1]
+    else:
+        # A partir de prim_type 36 → orbitais H e superiores
+        prim_index = prim_type - len(table) - 1  # índice 0-based a partir do tipo 36
+        current_type = 36
+        for L in range(5, 20):  # L = grau (5 → H, 6 → I, etc.)
+            count = (L + 1) * (L + 2) // 2
+            if prim_index < count:
+                idx = 0
+                for lx in range(L + 1):
+                    for ly in range(L + 1 - lx):
+                        lz = L - lx - ly
+                        if idx == prim_index:
+                            return lx, ly, lz
                         idx += 1
-    return -1, -1, -1
+            else:
+                prim_index -= count
+                current_type += count
+        # muito além (não suportado)
+        return -1, -1, -1
+
+    if 1 <= prim_type <= len(table):
+        return table[prim_type - 1]
+    else:
+        return -1, -1, -1
 
 @njit(parallel=True, fastmath=True)
 def calc_density_numba(points, primitive_centers, primitive_types, primitive_exponents, nuclei_coords, mo_coeffs, mo_occupations):

@@ -30,7 +30,6 @@ class WFXParser:
         # NÚCLEOS
         coords_raw = list(map(float, self._parse_tag_block(content, "Nuclear Cartesian Coordinates").split()))
         coords = np.array(coords_raw).reshape(-1, 3)
-        coords = coords[:, [2, 0, 1]]  # Corrige (z, x, y) -> (x, y, z)
 
         atomic_numbers = list(map(int, self._parse_tag_block(content, "Atomic Numbers").split()))
         nuclear_charges = list(map(float, self._parse_tag_block(content, "Nuclear Charges").split()))

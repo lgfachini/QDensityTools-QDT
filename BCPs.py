@@ -75,11 +75,13 @@ def follow_gradient_optimized_thread(p0, grad_tol, min_density):
     return None
 
 
-def generate_initial_points_between_atoms(nuclei, n_points_per_pair=30):
+def generate_initial_points_between_atoms(nuclei, n_points_per_pair=30, max_distance_bohr=6.0):
     points = []
     for a1, a2 in combinations(nuclei, 2):
         p1 = np.array(a1['coords'])
         p2 = np.array(a2['coords'])
+        if np.linalg.norm(p2 - p1) > max_distance_bohr:
+            continue
         for t in np.linspace(0.2, 0.8, n_points_per_pair):
             pt = (1 - t) * p1 + t * p2
             points.append(pt)
@@ -116,7 +118,7 @@ def export_bcps_to_xyz(parser, bcp_list, filename='BCPs.xyz'):
 def find_critical_points_from_gradient_flow(parser, grid_points=80, grad_tol=1e-4, min_density=1e-4,
                                             n_jobs=-1, n_points_per_pair=30):
     coords = np.array([n['coords'] for n in parser.data['nuclei']])
-    padding = 3.0
+    padding = 10.0
     x_min, y_min, z_min = coords.min(axis=0) - padding
     x_max, y_max, z_max = coords.max(axis=0) + padding
 

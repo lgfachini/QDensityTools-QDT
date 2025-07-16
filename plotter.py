@@ -12,7 +12,6 @@ def _coords_to_angstrom(coords_bohr):
 def _generate_grid(parser, plane, z_pos, grid_points, padding=None):
     coords = np.array([n['coords'] for n in parser.data['nuclei']])
     if padding is None:
-        # padding proporcional ao tamanho do sistema exceto se menor do que 4 bohr
         span = coords.max(axis=0) - coords.min(axis=0)
         padding = max(0.15 * np.linalg.norm(span), 4.0)
 
@@ -24,183 +23,213 @@ def _generate_grid(parser, plane, z_pos, grid_points, padding=None):
         y = np.linspace(y_min, y_max, grid_points)
         xx, yy = np.meshgrid(x, y)
         points = np.column_stack([xx.ravel(), yy.ravel(), np.full(xx.size, z_pos)])
-        return xx, yy, points
     elif plane == 'xz':
         x = np.linspace(x_min, x_max, grid_points)
         z = np.linspace(z_min, z_max, grid_points)
-        xx, zz = np.meshgrid(x, z)
-        points = np.column_stack([xx.ravel(), np.full(xx.size, z_pos), zz.ravel()])
-        return xx, zz, points
+        xx, yy = np.meshgrid(x, z)
+        points = np.column_stack([xx.ravel(), np.full(xx.size, z_pos), yy.ravel()])
     elif plane == 'yz':
         y = np.linspace(y_min, y_max, grid_points)
         z = np.linspace(z_min, z_max, grid_points)
-        yy, zz = np.meshgrid(y, z)
-        points = np.column_stack([np.full(yy.size, z_pos), yy.ravel(), zz.ravel()])
-        return yy, zz, points
+        xx, yy = np.meshgrid(y, z)
+        points = np.column_stack([np.full(xx.size, z_pos), xx.ravel(), yy.ravel()])
     else:
         raise ValueError("Plano inválido. Use 'xy', 'xz' ou 'yz'.")
+    return xx, yy, points
 
-def _draw_atoms(ax, parser, plane):
-    colors = plt.cm.tab20.colors
-    for nuc in parser.data['nuclei']:
-        coords_angstrom = _coords_to_angstrom(nuc['coords'])
-        if plane == 'xy':
-            x_pos, y_pos = coords_angstrom[0], coords_angstrom[1]
-        elif plane == 'xz':
-            x_pos, y_pos = coords_angstrom[0], coords_angstrom[2]
-        else:  # 'yz'
-            x_pos, y_pos = coords_angstrom[1], coords_angstrom[2]
+def _generate_custom_plane_grid(parser, atom_indices, grid_points, padding=None):
+    coords = np.array([n['coords'] for n in parser.data['nuclei']])
+    p1, p2, p3 = coords[atom_indices[0]], coords[atom_indices[1]], coords[atom_indices[2]]
 
-        color = colors[nuc['atomic_number'] % len(colors)]
-        ax.plot(x_pos, y_pos, 'o', color=color, markersize=8)
-        ax.text(x_pos + 0.05, y_pos + 0.05, nuc['symbol'], fontsize=10, color=color)
+    # Base do plano
+    v1 = p2 - p1
+    v2 = p3 - p1
+    normal = np.cross(v1, v2)
+    normal /= np.linalg.norm(normal)
 
-def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
-    xx, yy, points_bohr = _generate_grid(parser, plane, z_pos, grid_points)
-    density = density_calc.calculate_density(points_bohr, parser.data, spin='total')
-    density_log = np.log10(density + EPS).reshape(grid_points, grid_points)
+    x_axis = v1 / np.linalg.norm(v1)
+    y_axis = np.cross(normal, x_axis)
+    y_axis /= np.linalg.norm(y_axis)
 
-    # converter grade para angstrom só para plot
-    xx_ang = _coords_to_angstrom(xx)
-    yy_ang = _coords_to_angstrom(yy)
+    # Projeta todos os átomos no plano
+    proj_coords = []
+    for coord in coords:
+        rel = coord - p1
+        x_proj = np.dot(rel, x_axis)
+        y_proj = np.dot(rel, y_axis)
+        proj_coords.append([x_proj, y_proj])
+    proj_coords = np.array(proj_coords)
 
+    # Determinar bounds com padding
+    x_min, y_min = proj_coords.min(axis=0)
+    x_max, y_max = proj_coords.max(axis=0)
+
+    if padding is None:
+        padding = max(0.15 * np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)), 4.0)
+
+    x_min -= padding
+    x_max += padding
+    y_min -= padding
+    y_max += padding
+
+    u = np.linspace(x_min, x_max, grid_points)
+    v = np.linspace(y_min, y_max, grid_points)
+    uu, vv = np.meshgrid(u, v)
+
+    points = p1 + np.outer(uu.ravel(), x_axis) + np.outer(vv.ravel(), y_axis)
+
+    return uu, vv, points, x_axis, y_axis, p1
+
+def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold_bohr=1.0):
+    coords_bohr = np.array([n['coords'] for n in parser.data['nuclei']])
+    
+    if atom_indices is not None:
+        # Plano customizado
+        p1 = coords_bohr[atom_indices[0]]
+        v1 = coords_bohr[atom_indices[1]] - p1
+        v2 = coords_bohr[atom_indices[2]] - p1
+        normal = np.cross(v1, v2)
+        normal /= np.linalg.norm(normal)
+
+        for nuc in parser.data['nuclei']:
+            r = nuc['coords']
+            dist_to_plane = np.abs(np.dot(r - p1, normal))
+            if dist_to_plane < threshold_bohr:
+                local_coords = r - p1
+                x_proj = np.dot(local_coords, v1 / np.linalg.norm(v1))
+                y_proj = np.dot(local_coords, np.cross(normal, v1) / np.linalg.norm(np.cross(normal, v1)))
+                x_ang = x_proj * BOHR_TO_ANGSTROM
+                y_ang = y_proj * BOHR_TO_ANGSTROM
+                ax.plot(x_ang, y_ang, 'o', color='black', markersize=3)
+                ax.text(x_ang + 0.05, y_ang + 0.05, nuc['symbol'], fontsize=12, color='black')
+
+    else:
+        # Plano padrão
+        axis_map = {'xy': 2, 'xz': 1, 'yz': 0}
+        ignore_axis = axis_map[plane]
+        for nuc in parser.data['nuclei']:
+            coord = nuc['coords']
+            if abs(coord[ignore_axis] - z_pos) < threshold_bohr:
+                coord_ang = _coords_to_angstrom(coord)
+                if plane == 'xy':
+                    x, y = coord_ang[0], coord_ang[1]
+                elif plane == 'xz':
+                    x, y = coord_ang[0], coord_ang[2]
+                else:
+                    x, y = coord_ang[1], coord_ang[2]
+                color = colors[nuc['atomic_number'] % len(colors)]
+                ax.plot(x, y, 'o', color=color, markersize=8)
+                ax.text(x + 0.05, y + 0.05, nuc['symbol'], fontsize=9, color=color)
+
+
+def _plot_scalar_field(data, xx, yy, parser, suffix, title, label, cmap, xlabel, ylabel,
+                       plane=None, z_pos=None, atom_indices=None):
     fig, ax = plt.subplots(figsize=(8, 6))
-    cf = ax.contourf(xx_ang, yy_ang, density_log, levels=60, cmap='viridis')
-    plt.colorbar(cf, ax=ax, label='Log10 da densidade eletrônica (a.u.)')
-    ax.set_title(f'Densidade Eletrônica (fatia {plane.upper()})')
-    ax.set_xlabel('X (Å)' if plane in ['xy', 'xz'] else 'Y (Å)')
-    ax.set_ylabel('Y (Å)' if plane == 'xy' else 'Z (Å)')
-
-    _draw_atoms(ax, parser, plane)
+    cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap)
+    plt.colorbar(cf, ax=ax, label=label)
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    _draw_atoms(ax, parser, plane=plane, z_pos=z_pos, atom_indices=atom_indices)
     plt.tight_layout()
-
-    output_dir = os.path.dirname(parser.filename)
-    filename = os.path.join(output_dir, f'density_slice_{plane}_z{_coords_to_angstrom(np.array([z_pos]))[0]:.2f}.png')
-    plt.savefig(filename, dpi=300)
+    plt.savefig(os.path.join(os.path.dirname(parser.filename), f"{suffix}.png"), dpi=300)
     plt.close()
 
-def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
-    xx, yy, points_bohr = _generate_grid(parser, plane, z_pos, grid_points)
-    density = density_calc.calculate_density(points_bohr, parser.data).reshape(grid_points, grid_points)
+def _prepare_slice(parser, plane, z_pos, grid_points, atom_indices):
+    if atom_indices is not None:
+        xx, yy, points, *_ = _generate_custom_plane_grid(parser, atom_indices, grid_points)
+        xlabel, ylabel = "Custom X (Å)", "Custom Y (Å)"
+        suffix = f"custom_plane_{'_'.join(map(str, atom_indices))}"
+        draw_atoms = False
+    else:
+        xx, yy, points = _generate_grid(parser, plane, z_pos, grid_points)
+        xlabel = 'X (Å)' if plane in ['xy', 'xz'] else 'Y (Å)'
+        ylabel = 'Y (Å)' if plane == 'xy' else 'Z (Å)'
+        zlab = _coords_to_angstrom(np.array([z_pos]))[0]
+        suffix = f"{plane}_z{zlab:.2f}"
+        draw_atoms = True
+    return xx, yy, points, xlabel, ylabel, suffix, draw_atoms
 
-    dx = (xx[0,1] - xx[0,0]) if plane == 'xy' else (yy[1,0] - yy[0,0])
-    d2x = np.gradient(np.gradient(density, axis=0), axis=0) / dx**2
-    d2y = np.gradient(np.gradient(density, axis=1), axis=1) / dx**2
-    laplacian = d2x + d2y
-
-    laplacian_abs = np.abs(laplacian) + EPS
-    laplacian_sign = np.sign(laplacian)
-    laplacian_log = laplacian_sign * np.log10(laplacian_abs)
-
+def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(parser, plane, z_pos, grid_points, atom_indices)
+    rho = density_calc.calculate_density(points, parser.data, spin='total').reshape(grid_points, grid_points)
+    rho_log = np.log10(rho + EPS)
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
+    _plot_scalar_field(rho_log, xx_ang, yy_ang, parser, f'density_slice_{suffix}',
+                   'Densidade Eletrônica', 'log10(ρ)', 'viridis', xlabel, ylabel,
+                   plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    cf = ax.contourf(xx_ang, yy_ang, laplacian_log, levels=60, cmap='seismic')
-    plt.colorbar(cf, ax=ax, label='Log10 do Laplaciano da Densidade Eletrônica (a.u.)')
-    ax.set_title(f'Laplaciano da Densidade Eletrônica (fatia {plane.upper()})')
-    ax.set_xlabel('X (Å)' if plane in ['xy', 'xz'] else 'Y (Å)')
-    ax.set_ylabel('Y (Å)' if plane == 'xy' else 'Z (Å)')
-
-    _draw_atoms(ax, parser, plane)
-    plt.tight_layout()
-
-    output_dir = os.path.dirname(parser.filename)
-    filename = os.path.join(output_dir, f'laplacian_slice_{plane}_z{_coords_to_angstrom(np.array([z_pos]))[0]:.2f}.png')
-    plt.savefig(filename, dpi=300)
-    plt.close()
-
-def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
-    xx, yy, points_bohr = _generate_grid(parser, plane, z_pos, grid_points)
-    density = density_calc.calculate_density(points_bohr, parser.data).reshape(grid_points, grid_points)
-
-    dx = (xx[0,1] - xx[0,0]) if plane == 'xy' else (yy[1,0] - yy[0,0])
-    d_rho_dx, d_rho_dy = np.gradient(density, dx, dx)
-    grad_mag = np.sqrt(d_rho_dx**2 + d_rho_dy**2) + EPS
-    grad_mag_log = np.log10(grad_mag)
-
+def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(parser, plane, z_pos, grid_points, atom_indices)
+    rho = density_calc.calculate_density(points, parser.data).reshape(grid_points, grid_points)
+    dx = (xx[0, 1] - xx[0, 0])
+    d2x = np.gradient(np.gradient(rho, axis=0), axis=0) / dx**2
+    d2y = np.gradient(np.gradient(rho, axis=1), axis=1) / dx**2
+    lap = d2x + d2y
+    lap_log = np.sign(lap) * np.log10(np.abs(lap) + EPS)
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
+    _plot_scalar_field(lap_log, xx_ang, yy_ang, parser, f'laplacian_slice_{suffix}',
+                       'Laplaciano da Densidade', 'log10(∇²ρ)', 'seismic', xlabel, ylabel,
+                   plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    cf = ax.contourf(xx_ang, yy_ang, grad_mag_log, levels=60, cmap='inferno')
-    plt.colorbar(cf, ax=ax, label='Log10 do Módulo do Gradiente da Densidade Eletrônica (a.u.)')
-    ax.set_title(f'Módulo do Gradiente da Densidade Eletrônica (fatia {plane.upper()})')
-    ax.set_xlabel('X (Å)' if plane in ['xy', 'xz'] else 'Y (Å)')
-    ax.set_ylabel('Y (Å)' if plane == 'xy' else 'Z (Å)')
+def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(parser, plane, z_pos, grid_points, atom_indices)
+    rho = density_calc.calculate_density(points, parser.data).reshape(grid_points, grid_points)
+    dx = (xx[0, 1] - xx[0, 0])
+    gradx, grady = np.gradient(rho, dx, dx)
+    grad_mag = np.sqrt(gradx**2 + grady**2)
+    grad_log = np.log10(grad_mag + EPS)
+    xx_ang = _coords_to_angstrom(xx)
+    yy_ang = _coords_to_angstrom(yy)
+    _plot_scalar_field(grad_log, xx_ang, yy_ang, parser, f'gradient_slice_{suffix}',
+                       'Gradiente da Densidade', 'log10(|∇ρ|)', 'inferno', xlabel, ylabel,
+                   plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
-    _draw_atoms(ax, parser, plane)
-    plt.tight_layout()
-
-    output_dir = os.path.dirname(parser.filename)
-    filename = os.path.join(output_dir, f'gradient_slice_{plane}_z{_coords_to_angstrom(np.array([z_pos]))[0]:.2f}.png')
-    plt.savefig(filename, dpi=300)
-    plt.close()
+def plot_spin_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(parser, plane, z_pos, grid_points, atom_indices)
+    alpha = density_calc.calculate_density(points, parser.data, spin='alpha')
+    beta = density_calc.calculate_density(points, parser.data, spin='beta')
+    spin = (alpha - beta).reshape(grid_points, grid_points)
+    xx_ang = _coords_to_angstrom(xx)
+    yy_ang = _coords_to_angstrom(yy)
+    _plot_scalar_field(spin, xx_ang, yy_ang, parser, f'spin_density_slice_{suffix}',
+                       'Densidade de Spin', 'ρα - ρβ', 'seismic', xlabel, ylabel,
+                   plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
 def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index, points_count=700):
     atom1 = parser.data['nuclei'][atom1_index]
     atom2 = parser.data['nuclei'][atom2_index]
-
     coords1 = atom1['coords']
     coords2 = atom2['coords']
     vec = coords2 - coords1
     total_dist = np.linalg.norm(vec)
-
     path_points = np.array([coords1 + t * vec for t in np.linspace(0, 1, points_count)])
     distances_bohr = np.linspace(0, total_dist, points_count)
-    distances_angstrom = distances_bohr * BOHR_TO_ANGSTROM
+    distances_ang = distances_bohr * BOHR_TO_ANGSTROM
+    rho = density_calc.calculate_density(path_points, parser.data)
+    grad = np.gradient(rho, distances_bohr)
+    lap = np.gradient(grad, distances_bohr)
 
-    density = density_calc.calculate_density(path_points, parser.data)
-    gradient = np.gradient(density, distances_bohr)
-    laplacian = np.gradient(gradient, distances_bohr)
+    def safe_log10(arr): return np.log10(np.abs(arr) + EPS)
+    def normalize(arr): return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + EPS)
 
-    def safe_log10(arr):
-        return np.log10(np.abs(arr) + EPS)
-
-    def normalize(arr):
-        return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + EPS)
-
-    density_log_norm = normalize(safe_log10(density))
-    gradient_log_norm = normalize(safe_log10(gradient))
-    laplacian_log_norm = normalize(safe_log10(laplacian))
+    rho_n = normalize(safe_log10(rho))
+    grad_n = normalize(safe_log10(grad))
+    lap_n = normalize(safe_log10(lap))
 
     plt.figure(figsize=(9, 6))
-    plt.plot(distances_angstrom, density_log_norm, label='log10(Density)', color='black', linewidth=2)
-    plt.plot(distances_angstrom, gradient_log_norm, label='log10(Gradient)', color='blue', linestyle='--')
-    plt.plot(distances_angstrom, laplacian_log_norm, label='log10(Laplacian)', color='red', linestyle=':')
-    plt.xlabel('Distance along path (Å)')
-    plt.ylabel('log10-scaled & normalized')
-    plt.title(f'log10(Density, Gradient, Laplacian)\nBetween {atom1["symbol"]} and {atom2["symbol"]}')
+    plt.plot(distances_ang, rho_n, label='log10(Density)', color='black')
+    plt.plot(distances_ang, grad_n, label='log10(Gradient)', color='blue', linestyle='--')
+    plt.plot(distances_ang, lap_n, label='log10(Laplacian)', color='red', linestyle=':')
+    plt.xlabel('Distância (Å)')
+    plt.ylabel('log10-normalizado')
+    plt.title(f'log10(ρ, ∇ρ, ∇²ρ) entre {atom1["symbol"]} e {atom2["symbol"]}')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-
-    output_dir = os.path.dirname(parser.filename)
-    filename = os.path.join(output_dir, f'density_gradient_laplacian_log_path_{atom1["symbol"]}_{atom2["symbol"]}.png')
+    filename = os.path.join(os.path.dirname(parser.filename),
+                            f'density_gradient_laplacian_log_path_{atom1["symbol"]}_{atom2["symbol"]}.png')
     plt.savefig(filename, dpi=300)
-    plt.close()
-
-def plot_spin_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700):
-    xx, yy, points_bohr = _generate_grid(parser, plane, z_pos, grid_points)
-    alpha_density = density_calc.calculate_density(points_bohr, parser.data, spin='alpha')
-    beta_density = density_calc.calculate_density(points_bohr, parser.data, spin='beta')
-    spin_density = alpha_density - beta_density
-    spin_grid = spin_density.reshape(grid_points, grid_points)
-
-    xx_ang = _coords_to_angstrom(xx)
-    yy_ang = _coords_to_angstrom(yy)
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    cf = ax.contourf(xx_ang, yy_ang, spin_grid, levels=60, cmap='seismic')
-    plt.colorbar(cf, ax=ax, label='Densidade de Spin (ρα − ρβ)')
-    ax.set_title(f'Densidade de Spin (fatia {plane.upper()})')
-    ax.set_xlabel('X (Å)' if plane in ['xy', 'xz'] else 'Y (Å)')
-    ax.set_ylabel('Y (Å)' if plane == 'xy' else 'Z (Å)')
-
-    _draw_atoms(ax, parser, plane)
-    plt.tight_layout()
-
-    output_dir = os.path.dirname(parser.filename)
-    output_path = os.path.join(output_dir, f"spin_density_slice_{plane}.png")
-    plt.savefig(output_path, dpi=300)
     plt.close()
