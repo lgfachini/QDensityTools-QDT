@@ -1,8 +1,6 @@
 import numpy as np
 import re
 
-BOHR_TO_ANGSTROM = 0.52917721067
-
 class WFXParser:
     def __init__(self, filename):
         self.filename = filename
@@ -19,7 +17,6 @@ class WFXParser:
             'primitive_exponents': []
         }
         self._parse_legacy_wfx()
-        self._convert_units()
 
     def _parse_tag_block(self, content, tag):
         pattern = rf"<\s*{re.escape(tag)}\s*>\s*(.*?)\s*<\s*/\s*{re.escape(tag)}\s*>"
@@ -30,10 +27,10 @@ class WFXParser:
         with open(self.filename, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Extrair coordenadas dos núcleos e transpor para corrigir eixos
+        # NÚCLEOS
         coords_raw = list(map(float, self._parse_tag_block(content, "Nuclear Cartesian Coordinates").split()))
         coords = np.array(coords_raw).reshape(-1, 3)
-        coords = coords[:, [2, 0, 1]]  # Corrige ordem dos eixos: (z, x, y) -> (x, y, z)
+        coords = coords[:, [2, 0, 1]]  # Corrige (z, x, y) -> (x, y, z)
 
         atomic_numbers = list(map(int, self._parse_tag_block(content, "Atomic Numbers").split()))
         nuclear_charges = list(map(float, self._parse_tag_block(content, "Nuclear Charges").split()))
@@ -42,56 +39,64 @@ class WFXParser:
             self.data['nuclei'].append({
                 'atomic_number': z,
                 'charge': charge,
-                'coords': coord,
+                'coords': coord,  # em bohr
                 'symbol': self._element_symbol(z)
             })
 
-        # Primitive centers são índices que referenciam núcleos, então mantemos a lista normal
+        # PRIMITIVOS
         self.data['primitive_centers'] = list(map(int, self._parse_tag_block(content, "Primitive Centers").split()))
         self.data['primitive_types'] = list(map(int, self._parse_tag_block(content, "Primitive Types").split()))
         self.data['primitive_exponents'] = list(map(float, self._parse_tag_block(content, "Primitive Exponents").split()))
+        n_prim = len(self.data['primitive_centers'])
 
-        spin_types = self._parse_tag_block(content, "Molecular Orbital Spin Types").split()
+        # ORBITAIS MOLECULARES
+        spin_types_raw = self._parse_tag_block(content, "Molecular Orbital Spin Types")
+        spin_types = [line.strip() for line in spin_types_raw.splitlines() if line.strip()]
         occs = list(map(float, self._parse_tag_block(content, "Molecular Orbital Occupation Numbers").split()))
         energies = list(map(float, self._parse_tag_block(content, "Molecular Orbital Energies").split()))
         mo_block = self._parse_tag_block(content, "Molecular Orbital Primitive Coefficients")
 
-        mo_splits = re.split(r"<MO\s*Number\s*>\s*\d+\s*</MO\s*Number\s*>", mo_block)
+        # Divide os blocos por <MO Number>
+        mo_splits = re.split(r"<\s*MO\s*Number\s*>\s*\d+\s*</\s*MO\s*Number\s*>", mo_block)
         mo_splits = [blk.strip() for blk in mo_splits if blk.strip()]
-        n_prim = len(self.data['primitive_centers'])
 
         if not (len(spin_types) == len(occs) == len(energies) == len(mo_splits)):
-            raise ValueError("Inconsistência no número de orbitais: verifique spin_types, ocupações, energias e blocos MO.")
+            raise ValueError(
+                f"Inconsistência no número de orbitais: "
+                f"spin_types={len(spin_types)}, ocupações={len(occs)}, energias={len(energies)}, MO blocos={len(mo_splits)}"
+            )
 
-        for spin, occ, en, blk in zip(spin_types, occs, energies, mo_splits):
+        # Preenche orbitais
+        for i, (spin, occ, en, blk) in enumerate(zip(spin_types, occs, energies, mo_splits)):
             coeffs = []
             for line in blk.splitlines():
                 line = line.strip()
                 if line:
                     coeffs.extend(map(float, line.split()))
-            if len(coeffs) != n_prim:
-                raise ValueError(f"Número de coeficientes MO ({len(coeffs)}) diferente do número de primitivos ({n_prim})")
 
-            if spin.lower() == "alpha":
+            if len(coeffs) != n_prim:
+                raise ValueError(
+                    f"Erro no MO {i}: {len(coeffs)} coeficientes lidos, mas esperado {n_prim} primitivos."
+                )
+
+            spin_l = spin.lower().replace(" ", "")
+            if spin_l == "alpha":
                 self.data['mo_coefficients_alpha'].append(coeffs)
                 self.data['mo_occupations_alpha'].append(occ)
                 self.data['mo_energies_alpha'].append(en)
-            elif spin.lower() == "beta":
+            elif spin_l == "beta":
                 self.data['mo_coefficients_beta'].append(coeffs)
                 self.data['mo_occupations_beta'].append(occ)
                 self.data['mo_energies_beta'].append(en)
+            elif spin_l == "alphaandbeta":
+                self.data['mo_coefficients_alpha'].append(coeffs)
+                self.data['mo_coefficients_beta'].append(coeffs)
+                self.data['mo_occupations_alpha'].append(occ / 2.0)
+                self.data['mo_occupations_beta'].append(occ / 2.0)
+                self.data['mo_energies_alpha'].append(en)
+                self.data['mo_energies_beta'].append(en)
             else:
-                raise ValueError(f"Tipo de spin desconhecido: {spin}")
-
-    def _convert_units(self):
-        # Converte coordenadas dos núcleos de Bohr para Angstrom
-        for nuc in self.data['nuclei']:
-            nuc['coords'] = nuc['coords'] * BOHR_TO_ANGSTROM
-
-        # Converte expoentes primitivos de Bohr^-2 para Angstrom^-2
-        self.data['primitive_exponents'] = [
-            exp / (BOHR_TO_ANGSTROM ** 2) for exp in self.data['primitive_exponents']
-        ]
+                raise ValueError(f"Tipo de spin desconhecido: '{spin}'")
 
     def _element_symbol(self, atomic_number):
         periodic_table = [
