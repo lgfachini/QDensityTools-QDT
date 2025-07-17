@@ -2,6 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import density_calc
+import rdg_calc
+import s_sign_lambda2_rho_p
+from matplotlib.colors import SymLogNorm, TwoSlopeNorm, LinearSegmentedColormap
+import matplotlib.pyplot as plt
 
 EPS = 1e-15
 BOHR_TO_ANGSTROM = 0.52917721067
@@ -117,19 +121,36 @@ def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold
                     x, y = coord_ang[0], coord_ang[2]
                 else:
                     x, y = coord_ang[1], coord_ang[2]
-                color = colors[nuc['atomic_number'] % len(colors)]
-                ax.plot(x, y, 'o', color=color, markersize=8)
-                ax.text(x + 0.05, y + 0.05, nuc['symbol'], fontsize=9, color=color)
+                ax.plot(x, y, 'o', color='black', markersize=3)
+                ax.text(x + 0.05, y + 0.05, nuc['symbol'], fontsize=12, color='black')
 
 
 def _plot_scalar_field(data, xx, yy, parser, suffix, title, label, cmap, xlabel, ylabel,
-                       plane=None, z_pos=None, atom_indices=None):
+                       plane=None, z_pos=None, atom_indices=None,
+                       linthresh=1e-3, vmin=None, vmax=None):
     fig, ax = plt.subplots(figsize=(8, 6))
-    cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap)
+
+    if vmin is None:
+        vmin = np.nanmin(data)
+    if vmax is None:
+        vmax = np.nanmax(data)
+
+    # Se for colormap customizado
+    if cmap == 'custom_diverging':
+        # Definir colormap verde no zero, azul negativo, vermelho positivo
+        cmap = LinearSegmentedColormap.from_list("blue-green-red", ['blue', 'green', 'red'])
+
+        # Normalização simétrica em torno de zero
+        norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+        cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap, norm=norm)
+    else:
+        cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap, vmin=vmin, vmax=vmax)
+
     plt.colorbar(cf, ax=ax, label=label)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+
     _draw_atoms(ax, parser, plane=plane, z_pos=z_pos, atom_indices=atom_indices)
     plt.tight_layout()
     plt.savefig(os.path.join(os.path.dirname(parser.filename), f"{suffix}.png"), dpi=300)
@@ -157,7 +178,7 @@ def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indi
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
     _plot_scalar_field(rho_log, xx_ang, yy_ang, parser, f'density_slice_{suffix}',
-                   'Densidade Eletrônica', 'log10(ρ)', 'viridis', xlabel, ylabel,
+                   'Electronic density', r'$\log_{10}[\rho]$', 'viridis', xlabel, ylabel,
                    plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
 def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
@@ -171,7 +192,7 @@ def plot_laplacian_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_in
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
     _plot_scalar_field(lap_log, xx_ang, yy_ang, parser, f'laplacian_slice_{suffix}',
-                       'Laplaciano da Densidade', 'log10(∇²ρ)', 'seismic', xlabel, ylabel,
+                       'Electronic density Laplacian', r'$\log_{10}[\nabla^2\rho]$', 'seismic', xlabel, ylabel,
                    plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
 def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
@@ -184,7 +205,7 @@ def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
     _plot_scalar_field(grad_log, xx_ang, yy_ang, parser, f'gradient_slice_{suffix}',
-                       'Gradiente da Densidade', 'log10(|∇ρ|)', 'inferno', xlabel, ylabel,
+                       'Electronic density gradient', r'$\log_{10}[|\nabla\rho|]$', 'inferno', xlabel, ylabel,
                    plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
 def plot_spin_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
@@ -195,7 +216,7 @@ def plot_spin_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
     _plot_scalar_field(spin, xx_ang, yy_ang, parser, f'spin_density_slice_{suffix}',
-                       'Densidade de Spin', 'ρα - ρβ', 'seismic', xlabel, ylabel,
+                       'Spin density', r'$\rho_\alpha - \rho_\beta$', 'seismic', xlabel, ylabel,
                    plane=plane, z_pos=z_pos, atom_indices=atom_indices)
 
 def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index, points_count=700):
@@ -220,12 +241,12 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     lap_n = normalize(safe_log10(lap))
 
     plt.figure(figsize=(9, 6))
-    plt.plot(distances_ang, rho_n, label='log10(Density)', color='black')
-    plt.plot(distances_ang, grad_n, label='log10(Gradient)', color='blue', linestyle='--')
-    plt.plot(distances_ang, lap_n, label='log10(Laplacian)', color='red', linestyle=':')
-    plt.xlabel('Distância (Å)')
-    plt.ylabel('log10-normalizado')
-    plt.title(f'log10(ρ, ∇ρ, ∇²ρ) entre {atom1["symbol"]} e {atom2["symbol"]}')
+    plt.plot(distances_ang, rho_n, label=r'$\log_{10}[\rho]$', color='black')
+    plt.plot(distances_ang, grad_n, label=r'$\log_{10}[|\nabla \rho|]$', color='blue', linestyle='--')
+    plt.plot(distances_ang, lap_n, label=r'$\log_{10}[\nabla^2 \rho]$', color='red', linestyle=':')
+    plt.xlabel('Distance (Å)')
+    plt.ylabel('Normalized values')
+    plt.title(rf'$\log_{{10}}[\rho, \nabla \rho, \nabla^2 \rho]$ entre {atom1["symbol"]} e {atom2["symbol"]}')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -233,3 +254,47 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
                             f'density_gradient_laplacian_log_path_{atom1["symbol"]}_{atom2["symbol"]}.png')
     plt.savefig(filename, dpi=300)
     plt.close()
+
+    
+def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600, atom_indices=None):
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(
+        parser, plane, z_pos, grid_points, atom_indices
+    )
+
+    grid_shape = (grid_points, grid_points)
+    rho, gx, gy, gz = rdg_calc.compute_density_and_gradient(points, parser.data, grid_shape=grid_shape)
+    s_vals = rdg_calc.compute_s_values(rho, gx, gy, gz).reshape(grid_shape)
+
+    xx_ang = _coords_to_angstrom(xx)
+    yy_ang = _coords_to_angstrom(yy)
+
+    _plot_scalar_field(np.log10(s_vals + EPS), xx_ang, yy_ang, parser,  
+                       f'reduced_gradient_slice_{suffix}',
+                       'Reduced density gradient (s)',
+                       r'$\log_{10}[s]$', 'plasma', xlabel, ylabel,
+                       plane=plane, z_pos=z_pos, atom_indices=atom_indices)
+
+def plot_s_sign_lambda2_rho_slice(parser, plane='xy', z_pos=0.0, grid_points=600, atom_indices=None):
+
+    # Preparar grade e pontos no plano (cartesiano ou customizado por 3 átomos)
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(
+        parser, plane, z_pos, grid_points, atom_indices
+    )
+
+    grid_shape = (grid_points, grid_points)
+
+    # Calcular s × sign(lambda2) × rho
+    s_sign_lambda2_rho_vals, rho = s_sign_lambda2_rho_p.compute_s_sign_lambda2_times_rho(parser, points, parser.data, grid_shape)
+
+    # Converter coordenadas para angstrom
+    xx_ang = _coords_to_angstrom(xx)
+    yy_ang = _coords_to_angstrom(yy)
+
+    _plot_scalar_field(
+        s_sign_lambda2_rho_vals, xx_ang, yy_ang, parser,
+        f's_sign_lambda2_rho_slice_{suffix}',
+        r'$\log_{10}[s \times \rho] \times \mathrm{sign}(\lambda_2)$',
+        r'$\log_{10}[s \times \rho] \times \mathrm{sign}(\lambda_2)$ (a.u.)',
+        'custom_diverging', xlabel, ylabel,
+        plane=plane, z_pos=z_pos, atom_indices=atom_indices
+    )
