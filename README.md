@@ -9,7 +9,7 @@ It enables the computation and visualization of the following properties:
 - **Electron Density Gradient Magnitude** (`|∇ρ|`)
 - **Laplacian of Electron Density** (`∇²ρ`)
 - **Reduced Density Gradient** (`s`)
-- **NCI Indicator** (`log10[s \* ρ] \* sign(λ₂)`)
+- **NCI Indicator** (` \log_{10}(s \cdot \rho) \cdot \text{sign}(\lambda_2)`)
 - **NCI Scatter Plot** (`s` vs `sign(λ₂)ρ`) #in development
 - **Bond Critical Points (BCPs)**
 
