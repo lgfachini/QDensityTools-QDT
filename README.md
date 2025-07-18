@@ -118,8 +118,8 @@ Each module contains internal docstrings for all public functions. Use:
 ```bash
 pydoc parser
 ```
-
 Or explore via an IDE like VSCode or PyCharm.
+
 ---
 
 ## 📌 Notes
