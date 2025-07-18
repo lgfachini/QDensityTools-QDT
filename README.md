@@ -132,15 +132,13 @@ Or explore via an IDE like VSCode or PyCharm.
 
 ## 👨‍🔬 Applications
 
-QDT has been tested for:
+QDT has been tested for plots involving:
 
 - Bonding analysis in transition-metal and lanthanide complexes
 - Non-covalent interaction studies (hydrogen bonding, halogen bonding)
-- Charge density visualization of reactive intermediates
 
 ---
 
-## 🧑‍💻 Authors
 ## 👤 Author
 
 Lucas Gian Fachini – *PhD Candidate in Inorganic and Theoretical Chemistry*
