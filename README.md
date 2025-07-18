@@ -1,29 +1,45 @@
-# 🧪 WFX Density Analysis Toolkit
 
-This project is a Python-based toolkit for analyzing wavefunction data from `.wfx` files. It allows for visualization and analysis of **electron density**, **density gradients**, **Laplacians**, **bond critical points (BCPs)**, and other derived quantities such as **reduced density gradient (s)** and **`log10[s \* ρ] \* sign(λ2)`**.
+# 🧪 QDensity Tools (QDT): A WFX/CUBE Density Analysis Toolkit
 
-## 📁 Project Structure
+QDensity Tools (QDT) is a Python-based toolkit for analyzing and visualizing electron density-related properties from quantum chemistry wavefunction data in `.wfx` or `.cube` file formats.
+
+It enables the computation and visualization of the following properties:
+
+- **Electron Density** (`ρ`)
+- **Electron Density Gradient Magnitude** (`|∇ρ|`)
+- **Laplacian of Electron Density** (`∇²ρ`)
+- **Reduced Density Gradient** (`s`)
+- **NCI Indicator** (`sign(λ₂)ρ`)
+- **NCI Scatter Plot** (`s` vs `sign(λ₂)ρ`) #in development
+- **Bond Critical Points (BCPs)**
+
+---
+
+## 📁 Structure
 
 ```
-wfx_proj/
-├── main.py                   # Main execution script
-├── parser.py                 # Parses .wfx files and extracts wavefunction data
-├── plotter.py                # Plots density, gradient, and Laplacian (including along atom paths)
-├── density_calc.py           # Calculates 3D electron density on grids
-├── rdg_calc.py               # Calculates reduced density gradient (s)
-├── s_sign_lambda2_rho_p.py   # Calculates log10[s * ρ] * sign(λ2) and plots it
-├── BCPs.py                   # Identifies Bond Critical Points via gradient path following
-├── cube.py                   # Exports data to Gaussian cube format
-├── utils.py                  # Utility functions for 3D density calculations and support
-├── analysis.py               # (Under development) Advanced analysis and post-processing functions
-├── geometry.py               # (Under development) Geometrical calculations and molecule manipulation
-├── data/                     # Your .wfx files and output data
-└── README.md                 # This file
+qdt/
+├── main.py		        # Main script, here you tweak your calculation parameters
+├── parser.py                  # Parses .wfx and .cube files and stores electronic structure data
+├── density.py            	# Computes density from wavefunction files
+├── rdg_calc.py                # Computes Reduced Density Gradient (s)
+├── s_sign_lambda2_rho_p.py    # Computes and plots s * sign(λ₂) * ρ
+├── BCPs.py                    # Locates Bond Critical Points from density
+├── cube.py                    # (Under development) Outputs .cube files
+├── plotter.py                 # Generates 2D slices and scatter plots
+├── periodic_table.py          # Periodic table mapping for atomic number ↔ symbol
+├── utils                      # Other utilities, like electronic density integration
+├── analysis.py                # (Under development) Advanced analysis and post-processing functions
+├── geometry.py                # (Under development) Geometrical calculations and molecule manipulation
+└── data/                      # Example calculations for water, several other files for test
+
 ```
+
+---
 
 ## ⚙️ Features
 
-* 📄 **Reads `.wfx` files** using `parser.py`
+* 📄 **Reads `.wfx` and `.cube` files** using `parser.py`
 * 📈 **Plots**:
 
   * Electron density
@@ -36,6 +52,8 @@ wfx_proj/
 * 🧠 **Identifies BCPs (Bond Critical Points)** from the electron density field
 * 🚀 Everything is executed via `main.py`
 
+---
+
 ## ▶️ How to Use
 
 ### 1. Install Requirements
@@ -44,7 +62,7 @@ wfx_proj/
 pip install numpy matplotlib scipy numba joblib tqdm
 ```
 
-### 2. Add Your `.wfx` File
+### 2. Add Your `.wfx` or `.cube` File
 
 Place your `.wfx` file inside the `data/` folder. Example:
 
@@ -60,14 +78,15 @@ Adjust parameters in `main.py` (paths, atoms for paths, grid size, etc.) and run
 python main.py
 ```
 
-This will:
+This can:
 
-* Parse the `.wfx` file
+* Parse the `.wfx` or `.cube` file
 * Calculate and save 3D electron density as `density.cube`
 * Generate and save plots for density, gradient magnitude, and Laplacian slices
 * Plot density-related properties along a chosen interatomic path
 * Detect and save Bond Critical Points (BCPs) coordinates
 * Save all outputs in the `data/` folder
+
 
 ### 4. Additional Modules
 
@@ -81,13 +100,27 @@ Computes and plots the field `log10[s * ρ] * sign(λ2)`, commonly used in Non-C
 
 ## 📊 Example Output
 
-* Example calculation and results for a water dimer are in `/data`, including:
+* Example calculation and results for a water molecule are in `/data`, including:
 
   * `data/density_gradient_laplacian_path_O_H.png`: log-scaled density, gradient, and Laplacian between O and H atoms
-  * `data/s_field.png`: Reduced density gradient slice in a selected molecular plane
-  * `data/s_sign_lambda2_rho_field.png`: Slice of `log10[s * ρ] * sign(λ2)` field
-  * `data/electron_density.cube`: Cube file representing 3D electron density
+  * `data/reduced_gradient_slice_custom_plane_0_1_2.png`: Reduced density gradient slice in a selected molecular plane
+  * `data/s_sign_lambda2_rho_slice_custom_plane_0_1_2.png`: Slice of `log10[s * ρ] * sign(λ2)` field
+  * `data/h2o.cube`: Cube file representing 3D electron density
   * `data/BCPs.xyz`: Coordinates of detected bond critical points
+ * Some other results and .wfx files for test
+
+---
+
+## 📚 Documentation
+
+Each module contains internal docstrings for all public functions. Use:
+
+```bash
+pydoc parser
+```
+
+Or explore via an IDE like VSCode or PyCharm.
+---
 
 ## 📌 Notes
 
@@ -97,11 +130,34 @@ Computes and plots the field `log10[s * ρ] * sign(λ2)`, commonly used in Non-C
 * BCP search is parallelized and computationally efficient
 * Future modules (e.g., `analysis.py`, `geometry.py`) extend functionality for custom analyses
 
+## 👨‍🔬 Applications
+
+QDT has been tested for:
+
+- Bonding analysis in transition-metal and lanthanide complexes
+- Non-covalent interaction studies (hydrogen bonding, halogen bonding)
+- Charge density visualization of reactive intermediates
+
+---
+
+## 🧑‍💻 Authors
 ## 👤 Author
 
-Lucas Gian Fachini
+Lucas Gian Fachini – *PhD Candidate in Inorganic and Theoretical Chemistry*
 [GitHub: lgfachini](https://github.com/lgfachini)
 
-## 📜 License
+---
 
-GPL-3 License
+## 📄 License
+
+This project is licensed under the GPL-3 License.
+
+---
+
+## 💡 Acknowledgments
+
+This project uses concepts from:
+
+- AIM (Atoms in Molecules) theory – Bader
+- Non-Covalent Interaction (NCI) analysis – Johnson et al.
+- So many other concepts they are hard to list, maybe one day I'll credit it all. 

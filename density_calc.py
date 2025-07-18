@@ -1,10 +1,26 @@
 import numpy as np
 from numba import njit, prange
 
-EPS = 1e-15
+EPS = 1e-15  # Small epsilon to avoid numerical issues
 
 @njit(cache=True)
 def factorial2_numba(n):
+    """
+    Compute the double factorial (n!!) for a given integer n using numba for speed.
+
+    The double factorial of n is the product of all integers from n down to 1 (or 2) that have the same parity as n.
+    By definition, factorial2(0) = 1 and factorial2(-1) = 1.
+
+    Parameters
+    ----------
+    n : int
+        Integer for which to compute the double factorial.
+
+    Returns
+    -------
+    float
+        The value of n!! as a float.
+    """
     if n <= 0:
         return 1.0
     result = 1.0
@@ -14,7 +30,24 @@ def factorial2_numba(n):
 
 @njit(cache=True)
 def angular_momentum_numba(prim_type):
-    # Tabela explícita até G (prim_type 1–35)
+    """
+    Return the Cartesian angular momentum exponents (l, m, n) for a given primitive type index.
+
+    The function supports primitive types up to G (prim_type 1 to 35) explicitly,
+    and computes higher angular momenta (H and beyond) on the fly using combinatorics.
+
+    Parameters
+    ----------
+    prim_type : int
+        Index of primitive type starting at 1.
+
+    Returns
+    -------
+    tuple of ints
+        (l, m, n) angular momentum exponents for the primitive.
+        Returns (-1, -1, -1) if prim_type is invalid or not supported.
+    """
+    # Explicit table of angular momentum exponents for primitives 1 to 35 (up to G)
     table = [
         (0, 0, 0),  # 1  S
         (1, 0, 0),  # 2  PX
@@ -58,13 +91,14 @@ def angular_momentum_numba(prim_type):
     elif prim_type <= len(table):
         return table[prim_type - 1]
     else:
-        # A partir de prim_type 36 → orbitais H e superiores
-        prim_index = prim_type - len(table) - 1  # índice 0-based a partir do tipo 36
+        # For primitive types 36 and beyond (H, I, etc.), generate exponents combinatorially
+        prim_index = prim_type - len(table) - 1  # zero-based index beyond explicit table
         current_type = 36
-        for L in range(5, 20):  # L = grau (5 → H, 6 → I, etc.)
-            count = (L + 1) * (L + 2) // 2
+        for L in range(5, 20):  # Angular momentum degree L = 5 (H), 6 (I), etc.
+            count = (L + 1) * (L + 2) // 2  # Number of Cartesian functions for angular momentum L
             if prim_index < count:
                 idx = 0
+                # Enumerate all (lx, ly, lz) such that lx+ly+lz = L
                 for lx in range(L + 1):
                     for ly in range(L + 1 - lx):
                         lz = L - lx - ly
@@ -74,55 +108,96 @@ def angular_momentum_numba(prim_type):
             else:
                 prim_index -= count
                 current_type += count
-        # muito além (não suportado)
-        return -1, -1, -1
-
-    if 1 <= prim_type <= len(table):
-        return table[prim_type - 1]
-    else:
+        # Beyond supported angular momenta
         return -1, -1, -1
 
 @njit(parallel=True, fastmath=True)
-def calc_density_numba(points, primitive_centers, primitive_types, primitive_exponents, nuclei_coords, mo_coeffs, mo_occupations):
+def calc_density_numba(points, primitive_centers, primitive_types, primitive_exponents,
+                      nuclei_coords, mo_coeffs, mo_occupations):
+    """
+    Calculate the electron density at a set of points given basis set primitives and molecular orbitals.
+
+    Parameters
+    ----------
+    points : ndarray
+        Coordinates where density is evaluated (N_points x 3).
+    primitive_centers : ndarray
+        Indices (1-based) of atomic centers for each primitive function.
+    primitive_types : ndarray
+        Angular momentum type index for each primitive.
+    primitive_exponents : ndarray
+        Gaussian exponents for each primitive function.
+    nuclei_coords : ndarray
+        Cartesian coordinates of nuclei (atoms).
+    mo_coeffs : ndarray
+        Molecular orbital coefficients (number of MOs x number of primitives).
+    mo_occupations : ndarray
+        Occupation numbers for each molecular orbital.
+
+    Returns
+    -------
+    density : ndarray
+        Electron density values at the input points.
+    """
     n_points = points.shape[0]
     n_prim = primitive_centers.shape[0]
     n_mo = mo_coeffs.shape[0]
 
+    # Precompute basis function values at all points for all primitives
     basis_values = np.zeros((n_prim, n_points), dtype=np.float64)
 
     for prim_idx in prange(n_prim):
-        center_idx = primitive_centers[prim_idx] - 1
+        center_idx = primitive_centers[prim_idx] - 1  # Convert 1-based to 0-based index
         center = nuclei_coords[center_idx]
         exponent = primitive_exponents[prim_idx]
         prim_type = primitive_types[prim_idx]
 
         l, m, n = angular_momentum_numba(prim_type)
         if l == -1:
-            continue
+            continue  # Skip invalid primitives
 
         for i in range(n_points):
             Rx = points[i, 0] - center[0]
             Ry = points[i, 1] - center[1]
             Rz = points[i, 2] - center[2]
             R2 = Rx*Rx + Ry*Ry + Rz*Rz
+            # Evaluate primitive Gaussian basis function with Cartesian polynomial prefactor
             basis_values[prim_idx, i] = (Rx**l) * (Ry**m) * (Rz**n) * np.exp(-exponent * R2)
 
     density = np.zeros(n_points, dtype=np.float64)
 
+    # Sum contributions of all molecular orbitals weighted by their occupation numbers
     for mo_idx in prange(n_mo):
         occ = mo_occupations[mo_idx]
         if abs(occ) < EPS:
-            continue
+            continue  # Skip unoccupied orbitals
 
         psi = np.zeros(n_points, dtype=np.float64)
         for prim_idx in range(n_prim):
             psi += mo_coeffs[mo_idx, prim_idx] * basis_values[prim_idx]
 
-        density += occ * psi * psi
+        density += occ * psi * psi  # Density contribution = occupation * |ψ|^2
 
     return density
 
 def calculate_density(points, data, spin='total'):
+    """
+    Compute electron density at given points for specified spin channel or total.
+
+    Parameters
+    ----------
+    points : ndarray
+        Coordinates where density is evaluated.
+    data : dict
+        Dictionary containing basis set and molecular orbital data.
+    spin : str, optional
+        Spin channel: 'alpha', 'beta', or 'total' (default).
+
+    Returns
+    -------
+    ndarray
+        Electron density values at input points.
+    """
     centers = np.array(data['primitive_centers'])
     types = np.array(data['primitive_types'])
     exps = np.array(data['primitive_exponents'])
@@ -140,7 +215,7 @@ def calculate_density(points, data, spin='total'):
         dens_a = calc_density_numba(points, centers, types, exps, coords,
                                     np.array(data['mo_coefficients_alpha']),
                                     np.array(data['mo_occupations_alpha']))
-        if data['mo_coefficients_beta']:
+        if data.get('mo_coefficients_beta', None):
             dens_b = calc_density_numba(points, centers, types, exps, coords,
                                         np.array(data['mo_coefficients_beta']),
                                         np.array(data['mo_occupations_beta']))
