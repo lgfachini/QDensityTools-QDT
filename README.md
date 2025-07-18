@@ -9,7 +9,7 @@ It enables the computation and visualization of the following properties:
 - **Electron Density Gradient Magnitude** (`|∇ρ|`)
 - **Laplacian of Electron Density** (`∇²ρ`)
 - **Reduced Density Gradient** (`s`)
-- **NCI Indicator** (` \log_{10}(s \cdot \rho) \cdot \text{sign}(\lambda_2)`)
+- **NCI Indicator**: `log10(s · ρ) * sign(λ₂)`
 - **NCI Scatter Plot** (`s` vs `sign(λ₂)ρ`) #in development
 - **Bond Critical Points (BCPs)**
 
@@ -46,7 +46,7 @@ qdt/
   * Gradient of the density
   * Laplacian of the density
   * Reduced density gradient (`s`)
-  * `log10[s \* ρ] \* sign(λ2)`
+  * `log10(s · ρ) * sign(λ₂)`
   * Along any path between two selected atoms
 * 🧊 **Calculates 3D electron density** and exports as `.cube`
 * 🧠 **Identifies BCPs (Bond Critical Points)** from the electron density field
