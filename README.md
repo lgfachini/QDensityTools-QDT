@@ -1,7 +1,7 @@
 
 # 🧪 QDensity Tools (QDT): A WFX/CUBE Density Analysis Toolkit
 
-QDensity Tools (QDT) is a Python-based toolkit for analyzing and visualizing electron density-related properties from quantum chemistry wavefunction data in `.wfx` or `.cube` file formats.
+QDensity Tools (QDT) is a *HOBBY* Python-based toolkit for analyzing and visualizing electron density-related properties from quantum chemistry wavefunction data in `.wfx` or `.cube` file formats.
 
 It enables the computation and visualization of the following properties:
 
