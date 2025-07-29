@@ -1,9 +1,30 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
+title: QDensityTools-QDT
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
 authors:
-  - family-names: Fachini
-    given-names: Lucas Gian
-    orcid: https://orcid.org/0000-0003-1482-5209
-title: "QDensityTools-QDT"
+  - given-names: Lucas Gian
+    family-names: Fachini
+    email: lgfachini@ufpr.br
+    affiliation: Universidade Federal do Paraná
+    orcid: 'https://orcid.org/0000-0003-1482-5209'
+repository-code: 'https://github.com/lgfachini/QDensityTools-QDT/'
+abstract: >-
+  QDensity Tools (QDT) is a Python-based toolkit for
+  analyzing and visualizing electron density-related
+  properties from quantum chemistry wavefunction data in
+  .wfx or .cube file formats.
+keywords:
+  - cube
+  - wfx
+  - wavefunction
+  - electronic density
+license: GPL-3.0
+commit: 035f479139f2cd6ecae92628eaf1336dee9b55a2
 version: 0.0.1
-date-released: 2024-07-20
+date-released: '2025-07-10'
