@@ -123,10 +123,10 @@ def _generate_custom_plane_grid(parser, atom_indices, grid_points, padding=None)
     if padding is None:
         padding = max(0.15 * np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)), 4.0)
 
-    x_min -= -2 #padding ###########################################HEREEEEEEEEEEE
-    x_max += -2 #padding
-    y_min -= -2 #padding
-    y_max += -2 #padding
+    x_min -= 2 #padding ###########################################HEREEEEEEEEEEE
+    x_max += 2 #padding
+    y_min -= 2 #padding
+    y_max += 2 #padding
 
     # Create 2D meshgrid on plane
     u = np.linspace(x_min, x_max, grid_points)
