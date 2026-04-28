@@ -123,10 +123,10 @@ def _generate_custom_plane_grid(parser, atom_indices, grid_points, padding=None)
     if padding is None:
         padding = max(0.15 * np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)), 4.0)
 
-    x_min -= -7 #padding ###########################################HEREEEEEEEEEEE
-    x_max += -0 #padding
-    y_min -= -5 #padding
-    y_max += -5 #padding
+    x_min -= 2 #padding ###########################################HEREEEEEEEEEEE
+    x_max += 2 #padding
+    y_min -= 2 #padding
+    y_max += 2 #padding
 
     # Create 2D meshgrid on plane
     u = np.linspace(x_min, x_max, grid_points)
@@ -379,8 +379,8 @@ def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold
                 y_proj = np.dot(local_coords, np.cross(normal, v1) / np.linalg.norm(np.cross(normal, v1)))
                 x_ang = x_proj * BOHR_TO_ANGSTROM
                 y_ang = y_proj * BOHR_TO_ANGSTROM
-                #ax.plot(x_ang, y_ang, 'o', color='black', markersize=3)
-                #ax.text(x_ang + 0.05, y_ang + 0.05, nuc['symbol'], fontsize=12, color='black')
+                ax.plot(x_ang, y_ang, 'o', color='black', markersize=3)
+                ax.text(x_ang + 0.05, y_ang + 0.05, nuc['symbol'], fontsize=12, color='black')
 
     else:
         # Standard planes: filter atoms close to the plane coordinate and plot
