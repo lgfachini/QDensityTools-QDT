@@ -123,10 +123,10 @@ def _generate_custom_plane_grid(parser, atom_indices, grid_points, padding=None)
     if padding is None:
         padding = max(0.15 * np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)), 4.0)
 
-    x_min -= padding
-    x_max += padding
-    y_min -= padding
-    y_max += padding
+    x_min -= -7 #padding ###########################################HEREEEEEEEEEEE
+    x_max += -0 #padding
+    y_min -= -5 #padding
+    y_max += -5 #padding
 
     # Create 2D meshgrid on plane
     u = np.linspace(x_min, x_max, grid_points)
@@ -138,124 +138,214 @@ def _generate_custom_plane_grid(parser, atom_indices, grid_points, padding=None)
 
     return uu, vv, points, x_axis, y_axis, p1
 
-def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index, points_count=700, ext='.wfx'):
+def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
+                                               points_count=700, ext='.wfx',
+                                               fd_step=0.05, path_extension=0.10,
+                                               signed_scale=None):
     """
-    Plot the logarithm of electron density (ρ), gradient magnitude (|∇ρ|), 
-    and Laplacian (∇²ρ) along the straight line connecting two atoms.
-    
-    The sampling extends slightly beyond both atoms internally (-10% extension) 
-    for smoother interpolation, but only the segment strictly between atoms is plotted.
-    
-    Parameters:
-        parser (object): Parsed data object with wavefunction or cube data.
-        atom1_index (int): Index of the first atom in parser.data['nuclei'].
-        atom2_index (int): Index of the second atom.
-        points_count (int): Number of sampling points along the extended path.
-        ext (str): File extension of data source, either '.wfx' or '.cube'.
+    Plot 3D scalar quantities along the Cu-O path:
+    rho, |∇rho|, ∇²rho, reduced density gradient (s), and sign(lambda2)rho.
+
+    Notes
+    -----
+    - All quantities are true 3D quantities evaluated at points along the path.
+    - Positive quantities (rho, |∇rho|, s) are shown as log10(quantity).
+    - Signed quantities (∇²rho, sign(lambda2)rho) are shown with a sign-preserving
+      symmetric transform based on asinh, which is linear near zero and logarithmic
+      for large magnitudes.
     """
+
+    EPS = 1e-15
+    h = float(fd_step)
+
     atom1 = parser.data['nuclei'][atom1_index]
     atom2 = parser.data['nuclei'][atom2_index]
-    coords1 = atom1['coords']
-    coords2 = atom2['coords']
+    coords1 = np.asarray(atom1['coords'], dtype=float)
+    coords2 = np.asarray(atom2['coords'], dtype=float)
 
     vec = coords2 - coords1
     total_dist = np.linalg.norm(vec)
+    if total_dist < EPS:
+        raise ValueError("The two selected atoms are at the same position.")
+
     unit_vec = vec / total_dist
-    extension = -0.1 * total_dist  # Extend inward by 10% beyond atoms for sampling
 
-    # Create extended sampling path including extension beyond atoms
-    extended_vec = (total_dist + 2 * extension) * unit_vec
+    # Proper extension: extend BEYOND both atoms, then later keep only the internal segment
+    extension = float(path_extension) * total_dist
     start_point = coords1 - extension * unit_vec
-    extended_path_points = np.array([
-        start_point + t * extended_vec for t in np.linspace(0, 1, points_count)
-    ])
+    end_point = coords2 + extension * unit_vec
 
-    # Distances along extended path (Bohr and Angstrom)
+    t = np.linspace(0.0, 1.0, points_count)
+    extended_path_points = start_point[None, :] + t[:, None] * (end_point - start_point)[None, :]
+
     extended_distances_bohr = np.linspace(-extension, total_dist + extension, points_count)
     extended_distances_ang = extended_distances_bohr * BOHR_TO_ANGSTROM
 
-    def get_density_along_path_wfx():
-        # Calculate electron density from wavefunction data at given points
-        return density_calc.calculate_density(extended_path_points, parser.data)
+    def evaluate_density(sample_points):
+        if ext.lower() == '.wfx':
+            return density_calc.calculate_density(sample_points, parser.data)
 
-    def get_density_along_path_cube():
-        # Calculate electron density from cube grid data by trilinear interpolation
-        origin = parser.origin
-        vectors = parser.vectors
-        inv_vectors = np.linalg.inv(vectors.T)
-        
-        rel_coords = extended_path_points - origin
-        fractional_indices = rel_coords @ inv_vectors
-        coords_for_interp = fractional_indices.T
-        
-        density_along_path = scipy.ndimage.map_coordinates(
-            parser.density,
-            coords_for_interp,
-            order=3,
-            mode='nearest'
-        )
-        return density_along_path
+        elif ext.lower() == '.cube':
+            origin = parser.origin
+            vectors = parser.vectors
+            inv_vectors = np.linalg.inv(vectors.T)
 
-    # Get density values depending on file type
-    if ext == '.wfx':
-        rho_extended = get_density_along_path_wfx()
-        distances_bohr = extended_distances_bohr
-        distances_ang = extended_distances_ang
-    elif ext == '.cube':
-        rho_extended = get_density_along_path_cube()
-        distances_bohr = extended_distances_bohr
-        distances_ang = extended_distances_ang
-    else:
-        raise ValueError(f'Unsupported file extension: {ext}')
+            rel_coords = sample_points - origin
+            fractional_indices = rel_coords @ inv_vectors
 
-    # Keep only segment strictly between the two atoms for plotting
-    mask = (distances_bohr >= 0) & (distances_bohr <= total_dist)
-    rho = rho_extended[mask]
-    distances_bohr = distances_bohr[mask]
-    distances_ang = distances_ang[mask]
+            return scipy.ndimage.map_coordinates(
+                parser.density,
+                fractional_indices.T,
+                order=3,
+                mode='nearest'
+            )
 
-    # Compute numerical gradient (first derivative) and Laplacian (second derivative)
-    grad = np.gradient(rho, distances_bohr)
-    lap = np.gradient(grad, distances_bohr)
+        else:
+            raise ValueError(f"Unsupported file extension: '{ext}'. Use '.wfx' or '.cube'.")
 
-    def safe_log10(arr):
-        # Compute log10 of absolute values adding EPS to avoid log(0)
-        return np.log10(np.abs(arr) + EPS)
+    # Keep only the actual Cu-O segment for plotting
+    mask = (extended_distances_bohr >= 0.0) & (extended_distances_bohr <= total_dist)
+    points = extended_path_points[mask]
+    distances_bohr = extended_distances_bohr[mask]
+    distances_ang = extended_distances_ang[mask]
 
-    def normalize(arr):
-        # Normalize array linearly to [0,1]
-        return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + EPS)
+    # Cartesian displacements
+    ex = np.array([h, 0.0, 0.0])
+    ey = np.array([0.0, h, 0.0])
+    ez = np.array([0.0, 0.0, h])
 
-    # Normalize log-scaled quantities for better comparative plotting
-    rho_n = normalize(safe_log10(rho))
-    grad_n = normalize(safe_log10(grad))
-    lap_n = normalize(safe_log10(lap))
+    # Density evaluations
+    rho = evaluate_density(points)
 
-    # Create x-axis in Angstrom from 0 to total distance
-    x_axis = np.linspace(0, total_dist * BOHR_TO_ANGSTROM, len(rho_n))
+    rho_px = evaluate_density(points + ex)
+    rho_mx = evaluate_density(points - ex)
+    rho_py = evaluate_density(points + ey)
+    rho_my = evaluate_density(points - ey)
+    rho_pz = evaluate_density(points + ez)
+    rho_mz = evaluate_density(points - ez)
 
-    # Plot normalized log quantities
-    plt.figure(figsize=(9, 6))
-    plt.plot(x_axis, rho_n, label=r'$\log_{10}[\rho]$', color='black')
-    plt.plot(x_axis, grad_n, label=r'$\log_{10}[|\nabla \rho|]$', color='blue', linestyle='--')
-    plt.plot(x_axis, lap_n, label=r'$\log_{10}[\nabla^2 \rho]$', color='red', linestyle=':')
+    rho_pxpy = evaluate_density(points + ex + ey)
+    rho_pxmy = evaluate_density(points + ex - ey)
+    rho_mxpy = evaluate_density(points - ex + ey)
+    rho_mxmy = evaluate_density(points - ex - ey)
+
+    rho_pxpz = evaluate_density(points + ex + ez)
+    rho_pxmz = evaluate_density(points + ex - ez)
+    rho_mxpz = evaluate_density(points - ex + ez)
+    rho_mxmz = evaluate_density(points - ex - ez)
+
+    rho_pypz = evaluate_density(points + ey + ez)
+    rho_pymz = evaluate_density(points + ey - ez)
+    rho_mypz = evaluate_density(points - ey + ez)
+    rho_mymz = evaluate_density(points - ey - ez)
+
+    # 3D gradient
+    gx = (rho_px - rho_mx) / (2.0 * h)
+    gy = (rho_py - rho_my) / (2.0 * h)
+    gz = (rho_pz - rho_mz) / (2.0 * h)
+    grad_mag = np.sqrt(gx**2 + gy**2 + gz**2)
+
+    # 3D Hessian diagonal and Laplacian
+    dxx = (rho_px - 2.0 * rho + rho_mx) / (h**2)
+    dyy = (rho_py - 2.0 * rho + rho_my) / (h**2)
+    dzz = (rho_pz - 2.0 * rho + rho_mz) / (h**2)
+    lap = dxx + dyy + dzz
+
+    # 3D Hessian mixed terms
+    dxy = (rho_pxpy - rho_pxmy - rho_mxpy + rho_mxmy) / (4.0 * h**2)
+    dxz = (rho_pxpz - rho_pxmz - rho_mxpz + rho_mxmz) / (4.0 * h**2)
+    dyz = (rho_pypz - rho_pymz - rho_mypz + rho_mymz) / (4.0 * h**2)
+
+    # Second eigenvalue of the full 3D Hessian
+    lambda2 = np.empty_like(rho)
+    for i in range(len(rho)):
+        H = np.array([
+            [dxx[i], dxy[i], dxz[i]],
+            [dxy[i], dyy[i], dyz[i]],
+            [dxz[i], dyz[i], dzz[i]]
+        ], dtype=float)
+        lambda2[i] = np.linalg.eigvalsh(H)[1]
+
+    sign_lambda2_rho = np.sign(lambda2) * rho
+
+    # Reduced density gradient
+    prefactor = 1.0 / (2.0 * (3.0 * np.pi**2)**(1.0 / 3.0))
+    rdg = prefactor * grad_mag / np.maximum(rho, EPS)**(4.0 / 3.0)
+
+    def log_positive(arr):
+        return np.log10(np.maximum(arr, EPS))
+
+    def signed_asinh(arr, scale=None):
+        """
+        Sign-preserving symmetric compression.
+        Linear near zero, logarithmic at large |x|.
+        """
+        abs_arr = np.abs(arr)
+        valid = abs_arr[np.isfinite(abs_arr) & (abs_arr > EPS)]
+
+        if scale is None:
+            if valid.size == 0:
+                scale = 1.0
+            else:
+                scale = np.percentile(valid, 5)
+
+        scale = max(float(scale), EPS)
+        return np.arcsinh(arr / scale)
+
+    def normalize_01(arr):
+        amin = np.nanmin(arr)
+        amax = np.nanmax(arr)
+        if (not np.isfinite(amin)) or (not np.isfinite(amax)) or np.isclose(amax, amin):
+            return np.zeros_like(arr)
+        return (arr - amin) / (amax - amin)
+
+    def normalize_symmetric(arr):
+        absmax = np.nanmax(np.abs(arr))
+        if (not np.isfinite(absmax)) or absmax == 0.0:
+            return np.zeros_like(arr)
+        return arr / absmax
+
+    # Transformed quantities
+    rho_t = log_positive(rho)
+    grad_t = log_positive(grad_mag)
+    rdg_t = log_positive(rdg)
+
+    # Use the same symmetric transform family for signed fields
+    lap_t = signed_asinh(lap, scale=signed_scale)
+    sl2r_t = signed_asinh(sign_lambda2_rho, scale=signed_scale)
+
+    # Normalized curves for overlay
+    rho_n = normalize_01(rho_t)
+    grad_n = normalize_01(grad_t)
+    rdg_n = normalize_01(rdg_t)
+    lap_n = normalize_symmetric(lap_t)
+    sl2r_n = normalize_symmetric(sl2r_t)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(distances_ang, rho_n,  label=r'$\log_{10}[\rho]$', color='black',  linewidth=2.0)
+    plt.plot(distances_ang, grad_n, label=r'$\log_{10}[|\nabla \rho|]$', color='blue',   linestyle='--', linewidth=1.8)
+    plt.plot(distances_ang, rdg_n,  label=r'$\log_{10}[s]$', color='orange', linestyle='-.', linewidth=1.8)
+    plt.plot(distances_ang, lap_n,  label=r'$\mathrm{asinh}[(\nabla^2\rho)/c]$', color='red',   linestyle=':', linewidth=1.8)
+    plt.plot(distances_ang, sl2r_n, label=r'$\mathrm{asinh}[\mathrm{sign}(\lambda_2)\rho/c]$', color='green', linewidth=1.8)
+
+    plt.axhline(0.0, color='gray', linewidth=0.8, alpha=0.6)
     plt.xlabel('Distance (Å)')
     plt.ylabel('Normalized values')
-    plt.title(rf'$\log_{{10}}[\rho, \nabla \rho, \nabla^2 \rho]$ between {atom1["symbol"]} and {atom2["symbol"]}')
+    plt.title(rf'3D scalar fields along the path between {atom1["symbol"]} and {atom2["symbol"]}')
     plt.legend()
-    plt.grid(True)
+    plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    # Save figure to same directory as input file
     filename = os.path.join(
         os.path.dirname(parser.filename),
-        f'density_gradient_laplacian_log_path_{atom1["symbol"]}_{atom2["symbol"]}_{ext}.png'
+        f'density_gradient_laplacian_rdg_signlambda2rho_path_'
+        f'{atom1["symbol"]}_{atom2["symbol"]}{ext}.png'
     )
     plt.savefig(filename, dpi=300)
     plt.close()
 
 
-def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold_bohr=1.0):
+def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold_bohr=0.001):
     """
     Plot atomic positions as points and element symbols on a given matplotlib axis.
     
@@ -289,8 +379,8 @@ def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold
                 y_proj = np.dot(local_coords, np.cross(normal, v1) / np.linalg.norm(np.cross(normal, v1)))
                 x_ang = x_proj * BOHR_TO_ANGSTROM
                 y_ang = y_proj * BOHR_TO_ANGSTROM
-                ax.plot(x_ang, y_ang, 'o', color='black', markersize=3)
-                ax.text(x_ang + 0.05, y_ang + 0.05, nuc['symbol'], fontsize=12, color='black')
+                #ax.plot(x_ang, y_ang, 'o', color='black', markersize=3)
+                #ax.text(x_ang + 0.05, y_ang + 0.05, nuc['symbol'], fontsize=12, color='black')
 
     else:
         # Standard planes: filter atoms close to the plane coordinate and plot
@@ -460,13 +550,11 @@ def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indi
         plane=plane, z_pos=z_pos, atom_indices=atom_indices
     )
 
-def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None, ext='wfx'):
+def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700,
+                                  atom_indices=None, ext='.wfx', fd_step=0.05):
     """
-    Plot the magnitude of the gradient of the electronic density (|∇ρ|) on a 2D slice.
-
-    This function computes and visualizes the gradient of the electronic density 
-    in a 2D slice defined by either a standard cartesian plane (e.g., 'xy') or a 
-    custom plane defined by three atoms.
+    Plot the magnitude of the 3D gradient of the electronic density (|∇ρ|)
+    evaluated in Cartesian space, but displayed on a 2D slice.
 
     Parameters
     ----------
@@ -481,53 +569,76 @@ def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700
     atom_indices : list of int, optional
         If plane='atom', this must be a list of 3 atom indices defining the custom plane.
     ext : str, optional
-        Type of data source: 'wfx' or 'cube'. Used to call the correct density function.
+        Type of data source: '.wfx' or '.cube'. Used to call the correct density function.
+    fd_step : float, optional
+        Finite-difference step in Bohr for numerical derivatives (default: 0.05).
 
     Returns
     -------
     None
-        A 2D plot of the gradient magnitude is saved to disk with appropriate naming.
+        A 2D plot of log10(|∇ρ|) is saved to disk.
 
     Notes
     -----
-    - The output is a heatmap of log₁₀(|∇ρ|), which visually emphasizes variations in 
-      gradient magnitude.
-    - Atom positions are plotted as scatter points for context.
+    - The gradient is computed in full 3D Cartesian space.
+    - Only the values on the selected slice are plotted.
     - The grid is generated in atomic units but plotted in Angstroms.
     """
 
+    EPS = 1e-15
+    h = fd_step
+
     # Prepare the grid and coordinates in the slicing plane
-    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(parser, plane, z_pos, grid_points, atom_indices)
+    xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(
+        parser, plane, z_pos, grid_points, atom_indices
+    )
 
-    # Compute density from appropriate file format
-    if ext.lower() == '.wfx':
-        rho = density_calc.calculate_density(points, parser.data)
-    elif ext.lower() == '.cube':
-        origin = parser.origin
-        vectors = parser.vectors
-        inv_vectors = np.linalg.inv(vectors.T)
+    def evaluate_density(sample_points):
+        """Evaluate electron density at arbitrary Cartesian points."""
+        if ext.lower() == '.wfx':
+            return density_calc.calculate_density(sample_points, parser.data)
 
-        # Convert 2D slice points from real space to fractional cube grid indices
-        rel_coords = points - origin
-        fractional_indices = rel_coords @ inv_vectors
+        elif ext.lower() == '.cube':
+            origin = parser.origin
+            vectors = parser.vectors
+            inv_vectors = np.linalg.inv(vectors.T)
 
-        # Interpolate density on cube grid and reshape to 2D slice
-        density_1d = scipy.ndimage.map_coordinates(
-            parser.density,
-            fractional_indices.T,
-            order=3,
-            mode='nearest'
-        )
-        rho = density_1d.reshape(grid_points, grid_points)
-    else:
-        raise ValueError(f"Unsupported file type: '{ext}'. Use 'wfx' or 'cube'.")
+            # Convert Cartesian points to fractional cube indices
+            rel_coords = sample_points - origin
+            fractional_indices = rel_coords @ inv_vectors
 
-    rho = rho.reshape(grid_points, grid_points)
+            return scipy.ndimage.map_coordinates(
+                parser.density,
+                fractional_indices.T,
+                order=3,
+                mode='nearest'
+            )
 
-    # Compute gradients in x and y direction (Bohr units)
-    dx = (xx[0, 1] - xx[0, 0])
-    gradx, grady = np.gradient(rho, dx, dx)
-    grad_mag = np.sqrt(gradx**2 + grady**2)
+        else:
+            raise ValueError(f"Unsupported file type: '{ext}'. Use '.wfx' or '.cube'.")
+
+    # Cartesian displacements for finite differences
+    ex = np.array([h, 0.0, 0.0])
+    ey = np.array([0.0, h, 0.0])
+    ez = np.array([0.0, 0.0, h])
+
+    # Evaluate density at displaced points
+    rho_px = evaluate_density(points + ex)
+    rho_mx = evaluate_density(points - ex)
+
+    rho_py = evaluate_density(points + ey)
+    rho_my = evaluate_density(points - ey)
+
+    rho_pz = evaluate_density(points + ez)
+    rho_mz = evaluate_density(points - ez)
+
+    # 3D Cartesian gradient via central finite differences
+    grad_x = (rho_px - rho_mx) / (2.0 * h)
+    grad_y = (rho_py - rho_my) / (2.0 * h)
+    grad_z = (rho_pz - rho_mz) / (2.0 * h)
+
+    grad_mag = np.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
+    grad_mag = grad_mag.reshape(grid_points, grid_points)
 
     # Apply log scaling for visual clarity
     grad_log = np.log10(grad_mag + EPS)
@@ -538,80 +649,134 @@ def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700
 
     # Plot the result
     _plot_scalar_field(
-        grad_log, xx_ang, yy_ang, parser, 
+        grad_log,
+        xx_ang,
+        yy_ang,
+        parser,
         f'gradient_slice_{suffix}',
         'Electronic density gradient',
         r'$\log_{10}[|\nabla\rho|]$',
-        'inferno', xlabel, ylabel,
-        plane=plane, z_pos=z_pos, atom_indices=atom_indices
+        'inferno',
+        xlabel,
+        ylabel,
+        plane=plane,
+        z_pos=z_pos,
+        atom_indices=atom_indices
     )
 
 
-def plot_laplacian_slice(parser, ext='.wfx', plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
+def plot_laplacian_slice(parser, ext='.wfx', plane='xy', z_pos=0.0,
+                         grid_points=700, atom_indices=None, fd_step=0.08):
     """
-    Plot the logarithm of the Laplacian of the electron density on a specified 2D plane.
+    Plot a sign-preserving logarithmic map of the 3D Laplacian of the electron
+    density, evaluated in Cartesian space, but displayed only on a chosen 2D slice.
 
     Parameters
     ----------
     parser : object
         Parsed wavefunction or cube data containing necessary fields like density, grid, etc.
-    ext : str, default='wfx'
-        File extension type. Use 'wfx' for wavefunction format or 'cube' for precomputed cube data.
+    ext : str, default='.wfx'
+        File extension type. Use '.wfx' for wavefunction format or '.cube' for precomputed cube data.
     plane : str, default='xy'
-        Plane on which to take the slice. Can be 'xy', 'xz', 'yz', or 'atom' (custom plane through atoms).
+        Plane on which to take the slice. Can be 'xy', 'xz', 'yz', or 'atom'.
     z_pos : float, default=0.0
         Position (in Bohr) of the slice plane along the orthogonal axis.
     grid_points : int, default=700
         Number of grid points along each axis in the slice.
     atom_indices : list of int or None
         If provided, defines a custom plane passing through three atoms for slicing.
+    fd_step : float, default=0.05
+        Finite-difference step (in Bohr) used to evaluate the 3D Laplacian.
     """
-    # Prepare the 2D grid of points and other plot metadata
+
+    EPS = 1e-15
+    h = fd_step
+
+    # Prepare the 2D slice
     xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(
         parser, plane, z_pos, grid_points, atom_indices
     )
 
-    # Compute density from appropriate file format    
-    if ext == '.wfx':
-        rho = density_calc.calculate_density(points, parser.data).reshape(grid_points, grid_points)
-    elif ext == '.cube':
-        origin = parser.origin
-        vectors = parser.vectors
-        inv_vectors = np.linalg.inv(vectors.T)
+    def evaluate_density(sample_points):
+        """Evaluate electron density at arbitrary Cartesian points."""
+        if ext == '.wfx':
+            return density_calc.calculate_density(sample_points, parser.data)
 
-        # Convert 2D slice points from real space to fractional cube grid indices
-        rel_coords = points - origin
-        fractional_indices = rel_coords @ inv_vectors
+        elif ext == '.cube':
+            origin = parser.origin
+            vectors = parser.vectors
+            inv_vectors = np.linalg.inv(vectors.T)
 
-        # Interpolate density on cube grid and reshape to 2D slice
-        density_1d = scipy.ndimage.map_coordinates(
-            parser.density,
-            fractional_indices.T,
-            order=3,
-            mode='nearest'
-        )
-        rho = density_1d.reshape(grid_points, grid_points)
-    else:
-        raise ValueError(f"Unsupported file type: '{ext}'. Use 'wfx' or 'cube'.")
-        
-    # Compute second derivatives for Laplacian
-    dx = (xx[0, 1] - xx[0, 0])
-    d2x = np.gradient(np.gradient(rho, axis=0), axis=0) / dx**2
-    d2y = np.gradient(np.gradient(rho, axis=1), axis=1) / dx**2
-    lap = d2x + d2y
+            rel_coords = sample_points - origin
+            fractional_indices = rel_coords @ inv_vectors
 
-    # Convert to log scale: sign(lap) * log10(|lap| + EPS)
-    lap_log = np.sign(lap) * np.log10(np.abs(lap) + EPS)
+            return scipy.ndimage.map_coordinates(
+                parser.density,
+                fractional_indices.T,
+                order=3,
+                mode='nearest'
+            )
+
+        else:
+            raise ValueError(f"Unsupported file type: '{ext}'. Use '.wfx' or '.cube'.")
+
+    # Cartesian unit displacements
+    ex = np.array([h, 0.0, 0.0])
+    ey = np.array([0.0, h, 0.0])
+    ez = np.array([0.0, 0.0, h])
+
+    # Evaluate density at central and displaced points
+    rho0   = evaluate_density(points)
+    rho_px = evaluate_density(points + ex)
+    rho_mx = evaluate_density(points - ex)
+    rho_py = evaluate_density(points + ey)
+    rho_my = evaluate_density(points - ey)
+    rho_pz = evaluate_density(points + ez)
+    rho_mz = evaluate_density(points - ez)
+
+    # 3D Laplacian via central finite differences
+    lap_1d = (
+        (rho_px - 2.0 * rho0 + rho_mx) +
+        (rho_py - 2.0 * rho0 + rho_my) +
+        (rho_pz - 2.0 * rho0 + rho_mz)
+    ) / (h ** 2)
+
+    lap = lap_1d.reshape(grid_points, grid_points)
+
+    # Signed logarithmic transform
+    lap_log = np.sign(lap) * np.log10(np.maximum(np.abs(lap), EPS))
+
+    # Normalize symmetrically to [-1, 1]
+    absmax = np.nanmax(np.abs(lap_log))
+    if not np.isfinite(absmax) or absmax == 0.0:
+        absmax = 1.0
+
+    lap_sym = lap_log / absmax
+    lap_sym = np.clip(lap_sym, -1.0, 1.0)
+
+    # Force exact extrema so any internal autoscaling uses [-1, 1]
+    lap_sym[0, 0] = -1.0
+    lap_sym[-1, -1] = 1.0
 
     # Convert coordinates to angstroms for display
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
 
-    # Plotting the final 2D Laplacian slice
+    # Plot
     _plot_scalar_field(
-        lap_log, xx_ang, yy_ang, parser, f'laplacian_slice_{suffix}',
-        'Electronic density Laplacian', r'$\log_{10}[\nabla^2\rho]$', 'seismic',
-        xlabel, ylabel, plane=plane, z_pos=z_pos, atom_indices=atom_indices
+        lap_sym,
+        xx_ang,
+        yy_ang,
+        parser,
+        f'laplacian_slice_{suffix}',
+        'Electronic density Laplacian',
+        r'normalized sign$(\nabla^2\rho)\log_{10}|\nabla^2\rho|$',
+        'seismic',
+        xlabel,
+        ylabel,
+        plane=plane,
+        z_pos=z_pos,
+        atom_indices=atom_indices
     )
 
 def plot_spin_density_slice(parser, ext='.wfx', plane='xy', z_pos=0.0, grid_points=700, atom_indices=None):
@@ -670,9 +835,11 @@ def plot_spin_density_slice(parser, ext='.wfx', plane='xy', z_pos=0.0, grid_poin
         print("[INFO] To visualize spin density from cube data, you need to generate a separate cube file representing the difference between alpha and beta spin densities (p(alpha) - p(beta)) and then plot that as a density slice.")
 
     
-def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600, atom_indices=None, ext='.wfx'):
+def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600,
+                                atom_indices=None, ext='.wfx', fd_step=0.05):
     """
-    Plot the reduced density gradient (RDG) on a 2D slice of the molecular system.
+    Plot the reduced density gradient (RDG) on a 2D slice, using the full 3D
+    Cartesian gradient of the electron density.
 
     Parameters
     ----------
@@ -688,6 +855,8 @@ def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600, 
         Indices of 3 atoms defining a custom slicing plane (used if plane='atom').
     ext : str, optional
         Data file type, either '.wfx' or '.cube'. Determines the calculation method.
+    fd_step : float, optional
+        Finite-difference step in Bohr used to compute the 3D gradient.
 
     Returns
     -------
@@ -695,25 +864,63 @@ def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600, 
         Saves a 2D plot of the log-scaled reduced density gradient to disk.
     """
 
+    EPS = 1e-15
+    h = fd_step
+
     # Prepare the grid and points for the slice plane
     xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(
         parser, plane, z_pos, grid_points, atom_indices
     )
-    grid_shape = (grid_points, grid_points)
 
-    if ext == '.wfx':
-        # Calculate density and gradients using wavefunction data
-        rho, gx, gy, gz = rdg_calc.compute_density_and_gradient(parser, points, parser.data, grid_shape=grid_shape, ext=ext)
+    def evaluate_density(sample_points):
+        """Evaluate electron density at arbitrary Cartesian points."""
+        if ext.lower() == '.wfx':
+            return density_calc.calculate_density(sample_points, parser.data)
 
-    elif ext == '.cube':
-        # Calculate density and gradients directly from cube grid data
-        rho, gx, gy, gz = rdg_calc.compute_density_and_gradient(parser, points, parser.data, grid_shape=grid_shape, ext=ext)
+        elif ext.lower() == '.cube':
+            origin = parser.origin
+            vectors = parser.vectors
+            inv_vectors = np.linalg.inv(vectors.T)
 
-    else:
-        raise ValueError(f"Unsupported file extension: '{ext}'. Use '.wfx' or '.cube'.")
+            rel_coords = sample_points - origin
+            fractional_indices = rel_coords @ inv_vectors
 
-    # Compute reduced density gradient values
-    s_vals = rdg_calc.compute_s_values(rho, gx, gy, gz).reshape(grid_shape)
+            return scipy.ndimage.map_coordinates(
+                parser.density,
+                fractional_indices.T,
+                order=3,
+                mode='nearest'
+            )
+
+        else:
+            raise ValueError(f"Unsupported file extension: '{ext}'. Use '.wfx' or '.cube'.")
+
+    # Cartesian finite-difference displacements
+    ex = np.array([h, 0.0, 0.0])
+    ey = np.array([0.0, h, 0.0])
+    ez = np.array([0.0, 0.0, h])
+
+    # Central density and displaced densities
+    rho   = evaluate_density(points)
+    rho_px = evaluate_density(points + ex)
+    rho_mx = evaluate_density(points - ex)
+    rho_py = evaluate_density(points + ey)
+    rho_my = evaluate_density(points - ey)
+    rho_pz = evaluate_density(points + ez)
+    rho_mz = evaluate_density(points - ez)
+
+    # 3D Cartesian gradient components
+    gx = (rho_px - rho_mx) / (2.0 * h)
+    gy = (rho_py - rho_my) / (2.0 * h)
+    gz = (rho_pz - rho_mz) / (2.0 * h)
+
+    # Full 3D gradient magnitude
+    grad_mag = np.sqrt(gx**2 + gy**2 + gz**2)
+
+    # Reduced density gradient
+    prefactor = 1.0 / (2.0 * (3.0 * np.pi**2)**(1.0 / 3.0))
+    s_vals = prefactor * grad_mag / np.maximum(rho, EPS)**(4.0 / 3.0)
+    s_vals = s_vals.reshape(grid_points, grid_points)
 
     # Convert coordinates to Angstrom for plotting
     xx_ang = _coords_to_angstrom(xx)
@@ -721,17 +928,28 @@ def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600, 
 
     # Plot the log-scaled RDG slice
     _plot_scalar_field(
-        np.log10(s_vals + EPS), xx_ang, yy_ang, parser,
+        np.log10(s_vals + EPS),
+        xx_ang,
+        yy_ang,
+        parser,
         f'reduced_gradient_slice_{suffix}',
         'Reduced density gradient (s)',
-        r'$\log_{10}[s]$', 'plasma', xlabel, ylabel,
-        plane=plane, z_pos=z_pos, atom_indices=atom_indices
+        r'$\log_{10}[s]$',
+        'plasma',
+        xlabel,
+        ylabel,
+        plane=plane,
+        z_pos=z_pos,
+        atom_indices=atom_indices
     )
 
 
-def plot_s_sign_lambda2_rho_slice(parser, plane='xy', z_pos=0.0, grid_points=600, atom_indices=None, ext='.wfx'):
+def plot_s_sign_lambda2_rho_slice(parser, plane='xy', z_pos=0.0, grid_points=600,
+                                atom_indices=None, ext='.wfx', fd_step=0.05,
+                                log_scale=True, scale=None):
     """
-    Plot the quantity s × sign(lambda2) × rho on a 2D slice.
+    Plot sign(lambda2) * rho on a 2D slice, where lambda2 is the second eigenvalue
+    of the full 3D Cartesian Hessian of the electron density.
 
     Parameters
     ----------
@@ -747,41 +965,150 @@ def plot_s_sign_lambda2_rho_slice(parser, plane='xy', z_pos=0.0, grid_points=600
         List of 3 atom indices defining custom plane (if plane='atom').
     ext : str, optional
         File type indicator ('.wfx' or '.cube').
+    fd_step : float, optional
+        Finite-difference step in Bohr.
+    log_scale : bool, optional
+        If True, apply sign-preserving logarithmic scaling.
+    scale : float or None, optional
+        Reference scale for log compression. If None, it is estimated from the data.
 
     Returns
     -------
     None
-        Saves a 2D plot of the quantity to disk.
+        Saves a 2D plot of sign(lambda2) * rho to disk.
     """
 
-    # Prepare the grid and slice points
+    EPS = 1e-15
+    h = fd_step
+
     xx, yy, points, xlabel, ylabel, suffix, draw_atoms = _prepare_slice(
         parser, plane, z_pos, grid_points, atom_indices
     )
-    grid_shape = (grid_points, grid_points)
 
-    if ext == '.wfx':
-        # Use existing function for wfx data
-        s_sign_lambda2_rho_vals, rho = s_sign_lambda2_rho_p.compute_s_sign_lambda2_times_rho(parser, points, parser.data, grid_shape, ext)
+    def evaluate_density(sample_points):
+        if ext.lower() == '.wfx':
+            return density_calc.calculate_density(sample_points, parser.data)
 
-    elif ext == '.cube':
-        s_sign_lambda2_rho_vals, rho = s_sign_lambda2_rho_p.compute_s_sign_lambda2_times_rho(parser, points, parser.data, grid_shape, ext)
+        elif ext.lower() == '.cube':
+            origin = parser.origin
+            vectors = parser.vectors
+            inv_vectors = np.linalg.inv(vectors.T)
 
+            rel_coords = sample_points - origin
+            fractional_indices = rel_coords @ inv_vectors
 
+            return scipy.ndimage.map_coordinates(
+                parser.density,
+                fractional_indices.T,
+                order=3,
+                mode='nearest'
+            )
+
+        else:
+            raise ValueError(f"Unsupported file extension: '{ext}'. Use '.wfx' or '.cube'.")
+
+    # Cartesian displacements
+    ex = np.array([h, 0.0, 0.0])
+    ey = np.array([0.0, h, 0.0])
+    ez = np.array([0.0, 0.0, h])
+
+    # Density at central and displaced points
+    rho = evaluate_density(points)
+
+    rho_px = evaluate_density(points + ex)
+    rho_mx = evaluate_density(points - ex)
+    rho_py = evaluate_density(points + ey)
+    rho_my = evaluate_density(points - ey)
+    rho_pz = evaluate_density(points + ez)
+    rho_mz = evaluate_density(points - ez)
+
+    rho_pxpy = evaluate_density(points + ex + ey)
+    rho_pxmy = evaluate_density(points + ex - ey)
+    rho_mxpy = evaluate_density(points - ex + ey)
+    rho_mxmy = evaluate_density(points - ex - ey)
+
+    rho_pxpz = evaluate_density(points + ex + ez)
+    rho_pxmz = evaluate_density(points + ex - ez)
+    rho_mxpz = evaluate_density(points - ex + ez)
+    rho_mxmz = evaluate_density(points - ex - ez)
+
+    rho_pypz = evaluate_density(points + ey + ez)
+    rho_pymz = evaluate_density(points + ey - ez)
+    rho_mypz = evaluate_density(points - ey + ez)
+    rho_mymz = evaluate_density(points - ey - ez)
+
+    # 3D Hessian components
+    dxx = (rho_px - 2.0 * rho + rho_mx) / (h**2)
+    dyy = (rho_py - 2.0 * rho + rho_my) / (h**2)
+    dzz = (rho_pz - 2.0 * rho + rho_mz) / (h**2)
+
+    dxy = (rho_pxpy - rho_pxmy - rho_mxpy + rho_mxmy) / (4.0 * h**2)
+    dxz = (rho_pxpz - rho_pxmz - rho_mxpz + rho_mxmz) / (4.0 * h**2)
+    dyz = (rho_pypz - rho_pymz - rho_mypz + rho_mymz) / (4.0 * h**2)
+
+    # Compute lambda2 at each point
+    lambda2 = np.empty_like(rho)
+
+    for i in range(len(rho)):
+        H = np.array([
+            [dxx[i], dxy[i], dxz[i]],
+            [dxy[i], dyy[i], dyz[i]],
+            [dxz[i], dyz[i], dzz[i]]
+        ])
+        eigvals = np.linalg.eigvalsh(H)
+        lambda2[i] = eigvals[1]
+
+    # Raw quantity
+    quantity = np.sign(lambda2) * rho
+
+    # Sign-preserving logarithmic compression
+    if log_scale:
+        absq = np.abs(quantity)
+
+        if scale is None:
+            positive_absq = absq[np.isfinite(absq) & (absq > EPS)]
+            if positive_absq.size == 0:
+                scale = 1.0
+            else:
+                scale = np.percentile(positive_absq, 5)
+
+        scale = max(scale, EPS)
+        quantity_plot = np.sign(quantity) * np.log10(1.0 + absq / scale)
+        colorbar_label = (
+            r'normalized sign$(\lambda_2\rho)\,\log_{10}\!\left(1+\frac{|\,\mathrm{sign}(\lambda_2)\rho\,|}{\rho_0}\right)$'
+        )
     else:
-        raise ValueError(f"Unsupported file extension: '{ext}'. Use '.wfx' or '.cube'.")
+        quantity_plot = quantity.copy()
+        colorbar_label = r'normalized $\mathrm{sign}(\lambda_2)\rho$ (a.u.)'
 
-    # Convert coordinates to Angstrom for plotting
+    # Symmetric normalization
+    absmax = np.nanmax(np.abs(quantity_plot))
+    if not np.isfinite(absmax) or absmax == 0.0:
+        absmax = 1.0
+
+    quantity_plot = quantity_plot / absmax
+    quantity_plot = np.clip(quantity_plot, -1.0, 1.0)
+
+    # Force exact symmetric limits
+    quantity_plot = quantity_plot.reshape(grid_points, grid_points)
+    quantity_plot[0, 0] = -1.0
+    quantity_plot[-1, -1] = 1.0
+
     xx_ang = _coords_to_angstrom(xx)
     yy_ang = _coords_to_angstrom(yy)
 
-    # Plot the scalar field with a diverging colormap
     _plot_scalar_field(
-        s_sign_lambda2_rho_vals, xx_ang, yy_ang, parser,
-        f's_sign_lambda2_rho_slice_{suffix}',
-        r'$\log_{10}[s \times \rho] \times \mathrm{sign}(\lambda_2)$',
-        r'$\log_{10}[s \times \rho] \times \mathrm{sign}(\lambda_2)$ (a.u.)',
-        'custom_diverging', xlabel, ylabel,
-        plane=plane, z_pos=z_pos, atom_indices=atom_indices
+        quantity_plot,
+        xx_ang,
+        yy_ang,
+        parser,
+        f'sign_lambda2_rho_slice_{suffix}',
+        r'$\mathrm{sign}(\lambda_2)\rho$',
+        colorbar_label,
+        'custom_diverging',
+        xlabel,
+        ylabel,
+        plane=plane,
+        z_pos=z_pos,
+        atom_indices=atom_indices
     )
-

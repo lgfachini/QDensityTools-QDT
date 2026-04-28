@@ -92,7 +92,7 @@ def run_bcps_search(parser,
     )
     print("✓ Finished BCPs critical points search.")
 
-def main(input_file='data/h2o.wfx'): #you can edit your file, .wfx or .cube
+def main(input_file='data/Dy2Ti8.wfx'): #you can edit your file, .wfx or .cube
     ext = os.path.splitext(input_file)[1].lower()
 
     if ext == '.wfx':
@@ -106,15 +106,15 @@ def main(input_file='data/h2o.wfx'): #you can edit your file, .wfx or .cube
 
     ############## EXAMPLES OF CALLS YOU CAN TWEAK:
 
-    plot_density_slice_wrapper(parser, ext, atom_indices=[0, 1, 2], z_pos=0.0, grid_points=200)  # or plane='xy'
-    plot_gradient_slice_wrapper(parser, ext, atom_indices=[0, 1, 2], z_pos=0.0, grid_points=200)
-    plot_laplacian_slice_wrapper(parser, ext, atom_indices=[0, 1, 2], z_pos=0.0, grid_points=200)
-    plot_spin_density_slice_wrapper(parser, ext, atom_indices=[0, 1, 2], z_pos=0.0, grid_points=200)
-    plot_reduced_gradient_slice_wrapper(parser, ext, atom_indices=[0, 1, 2], z_pos=0.0, grid_points=200)
-    plot_s_sign_lambda2_rho_slice_wrapper(parser, ext, atom_indices=[0, 1, 2], z_pos=0.0, grid_points=200)
-    plot_density_gradient_laplacian_along_path_wrapper(parser, ext, atom1_index=1, atom2_index=2, points_count=200)
-    run_integration(parser, ext, grid_points=100, padding=4)
-    run_bcps_search(parser, grid_points=100, grad_tol=1e-5, min_density=1e-3, n_points_per_pair=10, n_jobs=-1, ext=ext)
+    #plot_density_slice_wrapper(parser, ext, atom_indices=[0, 57, 61], z_pos=0.0, grid_points=100)  # or plane='xy'
+    #plot_gradient_slice_wrapper(parser, ext, atom_indices=[0, 57, 61], z_pos=0.0, grid_points=100)
+    #plot_laplacian_slice_wrapper(parser, ext, atom_indices=[0, 1, 5], z_pos=0.0, grid_points=100)
+    #plot_spin_density_slice_wrapper(parser, ext, atom_indices=[0, 1, 5], z_pos=0.0, grid_points=300)
+    #plot_reduced_gradient_slice_wrapper(parser, ext, atom_indices=[0, 57, 61], z_pos=0.0, grid_points=300)
+    plot_s_sign_lambda2_rho_slice_wrapper(parser, ext, atom_indices=[0, 57, 61], z_pos=0.0, grid_points=300)
+    #plot_density_gradient_laplacian_along_path_wrapper(parser, ext, atom1_index=0, atom2_index=61, points_count=300)
+    #run_integration(parser, ext, grid_points=100, padding=4)
+    #run_bcps_search(parser, grid_points=100, grad_tol=1e-5, min_density=1e-3, n_points_per_pair=10, n_jobs=-1, ext=ext)
 
     ##############
 
