@@ -132,6 +132,17 @@ SLICE_X_RANGE = (-4.0, 12.0)   # xy: Cartesian x; custom plane: in-plane u
 SLICE_Y_RANGE = (-2.0, 6.0)     # xy: Cartesian y; custom plane: in-plane v
 ```
 
+Atom overlays on slice plots can be adjusted from settings:
+
+```python
+SHOW_ATOM_LABELS = True       # False hides element labels
+ATOM_LABEL_COLOR = "black"
+ATOM_LABEL_SIZE = 12
+ATOM_LABEL_OFFSET = 0.05      # Angstrom
+ATOM_MARKER_COLOR = "black"
+ATOM_MARKER_SIZE = 3
+```
+
 Standard plane: `PLANE = 'xy'` and `Z_POS = 0.0`.  
 Custom plane through three atoms: `PLANE = None` and `ATOM_INDICES = [0, 1, 2]`.
 
