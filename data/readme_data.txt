@@ -1,1 +1,1 @@
-Input your data into this folder (.wfx, .cube, so on). Output is going to be generated herein. 
+Place input files here (.wfx, .cube). Plots and analysis outputs are written next to the input file by default.
