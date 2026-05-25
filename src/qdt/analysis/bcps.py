@@ -38,7 +38,7 @@ class BCPSearchContext:
 
 def create_interpolators(x, y, z, density):
     """Interpolators for rho, gradient, and symmetric Hessian components."""
-    print("→ Creating interpolators for density, gradient, and Hessian...")
+    print("-> Creating interpolators for density, gradient, and Hessian...")
     interp_density = RegularGridInterpolator(
         (x, y, z), density, bounds_error=False, fill_value=np.nan
     )
@@ -59,12 +59,12 @@ def create_interpolators(x, y, z, density):
         RegularGridInterpolator((x, y, z), h, bounds_error=False, fill_value=np.nan)
         for h in hess_components
     ]
-    print("✓ Interpolators created.")
+    print("Interpolators created.")
     return interp_density, interp_grad, interp_hessian
 
 
 def follow_gradient_to_bcp(p0, ctx, grad_tol, min_density, max_iter=300):
-    """Follow |∇ρ| → 0 and classify as bond critical point (2 negative Hessian eigenvalues)."""
+    """Follow |grad rho| toward zero and classify bond critical points."""
 
     def objective(p):
         if not ctx.within_bounds(p):
@@ -154,7 +154,7 @@ def ensure_atomic_numbers(nuclei):
 
 
 def export_bcps_to_xyz(parser, bcp_list, filename="BCPs.xyz"):
-    print("→ Exporting BCPs to .xyz file...")
+    print("-> Exporting BCPs to .xyz file...")
     path = os.path.join(os.path.dirname(parser.filename), filename)
     with open(path, "w", encoding="utf-8") as f:
         total = len(parser.data["nuclei"]) + len(bcp_list)
@@ -167,7 +167,7 @@ def export_bcps_to_xyz(parser, bcp_list, filename="BCPs.xyz"):
         for bcp in bcp_list:
             x_, y_, z_ = np.array(bcp["position"]) * BOHR_TO_ANGSTROM
             f.write(f"X {x_:.6f} {y_:.6f} {z_:.6f}\n")
-    print(f"✓ Saved {path}")
+    print(f"Saved {path}")
 
 
 def find_critical_points_from_gradient_flow(
@@ -211,12 +211,12 @@ def find_critical_points_from_gradient_flow(
     points = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=-1)
 
     if ext == ".wfx":
-        print("→ Calculating density on grid...")
+        print("-> Calculating density on grid...")
         density = calculate_density(points, parser.data).reshape(
             (grid_points, grid_points, grid_points)
         )
     elif ext == ".cube":
-        print("→ Interpolating density from .cube...")
+        print("-> Interpolating density from .cube...")
         density = evaluate_density(parser, points, ext=".cube").reshape(
             (grid_points, grid_points, grid_points)
         )
@@ -226,7 +226,7 @@ def find_critical_points_from_gradient_flow(
     ensure_atomic_numbers(parser.data["nuclei"])
 
     if export_cube:
-        print(f"→ Exporting density grid to {cube_filename}...")
+        print(f"-> Exporting density grid to {cube_filename}...")
         write_cube_file(cube_filename, density, x, y, z, parser.data["nuclei"], parser)
 
     interp_rho, interp_grad, interp_hessian = create_interpolators(x, y, z, density)
@@ -238,22 +238,22 @@ def find_critical_points_from_gradient_flow(
         max_distance_bohr=max_distance_bohr,
     )
     if len(sample_points) == 0:
-        print("⚠ No initial points generated (increase max_distance_bohr or check geometry).")
+        print("No initial points generated (increase max_distance_bohr or check geometry).")
         export_bcps_to_xyz(parser, [])
         return []
 
-    print(f"→ Gradient following from {len(sample_points)} seeds...")
+    print(f"-> Gradient following from {len(sample_points)} seeds...")
     with parallel_backend("threading"):
         results = Parallel(n_jobs=n_jobs)(
             delayed(follow_gradient_to_bcp)(
                 p, ctx, grad_tol, min_density, max_optimizer_iter
             )
-            for p in tqdm(sample_points, desc="↪ Searching BCPs", unit="point")
+            for p in tqdm(sample_points, desc="Searching BCPs", unit="point")
         )
 
     found = [r for r in results if r is not None]
-    print(f"→ Merging {len(found)} candidates (threshold={duplicate_threshold} Bohr)...")
+    print(f"-> Merging {len(found)} candidates (threshold={duplicate_threshold} Bohr)...")
     filtered = filter_close_points(found, threshold=duplicate_threshold)
-    print(f"✓ {len(filtered)} BCP(s) retained.")
+    print(f"{len(filtered)} BCP(s) retained.")
     export_bcps_to_xyz(parser, filtered)
     return filtered

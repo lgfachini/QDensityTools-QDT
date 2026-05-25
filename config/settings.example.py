@@ -20,6 +20,14 @@ SLICE_PADDING_Y = None
 SLICE_X_RANGE = None
 SLICE_Y_RANGE = None
 
+# Atom overlays on slice plots
+SHOW_ATOM_LABELS = True
+ATOM_LABEL_COLOR = "black"
+ATOM_LABEL_SIZE = 12
+ATOM_LABEL_OFFSET = 0.05  # Angstrom
+ATOM_MARKER_COLOR = "black"
+ATOM_MARKER_SIZE = 3
+
 PLANE = "xy"
 Z_POS = 0.0
 ATOM_INDICES = [0, 1, 2]

@@ -161,12 +161,12 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     extended_distances_bohr = np.linspace(-extension, total_dist + extension, points_count)
     extended_distances_ang = extended_distances_bohr * BOHR_TO_ANGSTROM
 
-    def evaluate_density(sample_points):
+    def evaluate_path_density(sample_points):
         if ext.lower() == '.wfx':
             return calculate_density(sample_points, parser.data)
 
         elif ext.lower() == '.cube':
-            return evaluate_density(parser, sample_points, ext='.cube')
+            return _eval_density(parser, sample_points, ext='.cube')
 
         else:
             raise ValueError(f"Unsupported file extension: '{ext}'. Use '.wfx' or '.cube'.")
@@ -183,29 +183,29 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     ez = np.array([0.0, 0.0, h])
 
     # Density evaluations
-    rho = evaluate_density(points)
+    rho = evaluate_path_density(points)
 
-    rho_px = evaluate_density(points + ex)
-    rho_mx = evaluate_density(points - ex)
-    rho_py = evaluate_density(points + ey)
-    rho_my = evaluate_density(points - ey)
-    rho_pz = evaluate_density(points + ez)
-    rho_mz = evaluate_density(points - ez)
+    rho_px = evaluate_path_density(points + ex)
+    rho_mx = evaluate_path_density(points - ex)
+    rho_py = evaluate_path_density(points + ey)
+    rho_my = evaluate_path_density(points - ey)
+    rho_pz = evaluate_path_density(points + ez)
+    rho_mz = evaluate_path_density(points - ez)
 
-    rho_pxpy = evaluate_density(points + ex + ey)
-    rho_pxmy = evaluate_density(points + ex - ey)
-    rho_mxpy = evaluate_density(points - ex + ey)
-    rho_mxmy = evaluate_density(points - ex - ey)
+    rho_pxpy = evaluate_path_density(points + ex + ey)
+    rho_pxmy = evaluate_path_density(points + ex - ey)
+    rho_mxpy = evaluate_path_density(points - ex + ey)
+    rho_mxmy = evaluate_path_density(points - ex - ey)
 
-    rho_pxpz = evaluate_density(points + ex + ez)
-    rho_pxmz = evaluate_density(points + ex - ez)
-    rho_mxpz = evaluate_density(points - ex + ez)
-    rho_mxmz = evaluate_density(points - ex - ez)
+    rho_pxpz = evaluate_path_density(points + ex + ez)
+    rho_pxmz = evaluate_path_density(points + ex - ez)
+    rho_mxpz = evaluate_path_density(points - ex + ez)
+    rho_mxmz = evaluate_path_density(points - ex - ez)
 
-    rho_pypz = evaluate_density(points + ey + ez)
-    rho_pymz = evaluate_density(points + ey - ez)
-    rho_mypz = evaluate_density(points - ey + ez)
-    rho_mymz = evaluate_density(points - ey - ez)
+    rho_pypz = evaluate_path_density(points + ey + ez)
+    rho_pymz = evaluate_path_density(points + ey - ez)
+    rho_mypz = evaluate_path_density(points - ey + ez)
+    rho_mymz = evaluate_path_density(points - ey - ez)
 
     # 3D gradient
     gx = (rho_px - rho_mx) / (2.0 * h)
@@ -297,7 +297,7 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     plt.plot(distances_ang, sl2r_n, label=r'$\mathrm{asinh}[\mathrm{sign}(\lambda_2)\rho/c]$', color='green', linewidth=1.8)
 
     plt.axhline(0.0, color='gray', linewidth=0.8, alpha=0.6)
-    plt.xlabel('Distance (Å)')
+    plt.xlabel(r'Distance ($\AA$)')
     plt.ylabel('Normalized values')
     plt.title(rf'3D scalar fields along the path between {atom1["symbol"]} and {atom2["symbol"]}')
     plt.legend()
@@ -313,7 +313,20 @@ def plot_density_gradient_laplacian_along_path(parser, atom1_index, atom2_index,
     plt.close()
 
 
-def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold_bohr=0.001):
+def _draw_atoms(
+    ax,
+    parser,
+    plane=None,
+    z_pos=None,
+    atom_indices=None,
+    threshold_bohr=0.001,
+    show_atom_labels=True,
+    atom_label_color="black",
+    atom_label_size=12,
+    atom_marker_color="black",
+    atom_marker_size=3,
+    atom_label_offset=0.05,
+):
     """
     Plot atomic positions as points and element symbols on a given matplotlib axis.
     
@@ -327,6 +340,12 @@ def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold
         z_pos (float, optional): Coordinate value perpendicular to plane (in Bohr).
         atom_indices (list of int, optional): Three atom indices defining a custom plane.
         threshold_bohr (float): Maximum distance from plane to consider atoms for plotting (in Bohr).
+        show_atom_labels (bool): Whether to draw element labels next to atom markers.
+        atom_label_color (str): Matplotlib color for element labels.
+        atom_label_size (float): Font size for element labels.
+        atom_marker_color (str): Matplotlib color for atom markers.
+        atom_marker_size (float): Marker size for atom positions.
+        atom_label_offset (float): Label offset in Angstrom on both plot axes.
     """
     coords_bohr = np.array([n['coords'] for n in parser.data['nuclei']])
     
@@ -347,8 +366,15 @@ def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold
                 y_proj = np.dot(local_coords, np.cross(normal, v1) / np.linalg.norm(np.cross(normal, v1)))
                 x_ang = x_proj * BOHR_TO_ANGSTROM
                 y_ang = y_proj * BOHR_TO_ANGSTROM
-                ax.plot(x_ang, y_ang, 'o', color='black', markersize=3)
-                ax.text(x_ang + 0.05, y_ang + 0.05, nuc['symbol'], fontsize=12, color='black')
+                ax.plot(x_ang, y_ang, 'o', color=atom_marker_color, markersize=atom_marker_size)
+                if show_atom_labels:
+                    ax.text(
+                        x_ang + atom_label_offset,
+                        y_ang + atom_label_offset,
+                        nuc['symbol'],
+                        fontsize=atom_label_size,
+                        color=atom_label_color,
+                    )
 
     else:
         # Standard planes: filter atoms close to the plane coordinate and plot
@@ -364,13 +390,23 @@ def _draw_atoms(ax, parser, plane=None, z_pos=None, atom_indices=None, threshold
                     x, y = coord_ang[0], coord_ang[2]
                 else:
                     x, y = coord_ang[1], coord_ang[2]
-                ax.plot(x, y, 'o', color='black', markersize=3)
-                ax.text(x + 0.05, y + 0.05, nuc['symbol'], fontsize=12, color='black')
+                ax.plot(x, y, 'o', color=atom_marker_color, markersize=atom_marker_size)
+                if show_atom_labels:
+                    ax.text(
+                        x + atom_label_offset,
+                        y + atom_label_offset,
+                        nuc['symbol'],
+                        fontsize=atom_label_size,
+                        color=atom_label_color,
+                    )
 
 
 def _plot_scalar_field(data, xx, yy, parser, suffix, title, label, cmap, xlabel, ylabel,
                        plane=None, z_pos=None, atom_indices=None,
-                       linthresh=1e-3, vmin=None, vmax=None):
+                       linthresh=1e-3, vmin=None, vmax=None,
+                       show_atom_labels=True, atom_label_color="black",
+                       atom_label_size=12, atom_marker_color="black",
+                       atom_marker_size=3, atom_label_offset=0.05):
     """
     Plot a scalar field (e.g., density, gradient, laplacian) on a 2D grid with contours,
     including atoms positions on the plane.
@@ -405,9 +441,11 @@ def _plot_scalar_field(data, xx, yy, parser, suffix, title, label, cmap, xlabel,
         # Blue for negative, green at zero, red for positive
         cmap = LinearSegmentedColormap.from_list("blue-green-red", ['blue', 'green', 'red'])
 
-        # Symmetric normalization about zero
-        norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
-        cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap, norm=norm)
+        if vmin < 0.0 < vmax:
+            norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+            cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap, norm=norm)
+        else:
+            cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap, vmin=vmin, vmax=vmax)
     else:
         cf = ax.contourf(xx, yy, data, levels=60, cmap=cmap, vmin=vmin, vmax=vmax)
 
@@ -417,7 +455,19 @@ def _plot_scalar_field(data, xx, yy, parser, suffix, title, label, cmap, xlabel,
     ax.set_ylabel(ylabel)
 
     # Draw atoms on plot
-    _draw_atoms(ax, parser, plane=plane, z_pos=z_pos, atom_indices=atom_indices)
+    _draw_atoms(
+        ax,
+        parser,
+        plane=plane,
+        z_pos=z_pos,
+        atom_indices=atom_indices,
+        show_atom_labels=show_atom_labels,
+        atom_label_color=atom_label_color,
+        atom_label_size=atom_label_size,
+        atom_marker_color=atom_marker_color,
+        atom_marker_size=atom_marker_size,
+        atom_label_offset=atom_label_offset,
+    )
     plt.tight_layout()
     plt.savefig(os.path.join(os.path.dirname(parser.filename), f"{suffix}.png"), dpi=300)
     plt.close()
@@ -440,19 +490,21 @@ def _prepare_slice(parser, plane, z_pos, grid_points, atom_indices, padding=None
         xx, yy, points, _, _, _ = _generate_custom_plane_grid(
             parser, atom_indices, grid_points, **grid_kw
         )
-        xlabel, ylabel = "Custom X (Å)", "Custom Y (Å)"
+        xlabel, ylabel = r"Custom X ($\AA$)", r"Custom Y ($\AA$)"
         suffix = f"custom_plane_{'_'.join(map(str, atom_indices))}"
     else:
         xx, yy, points = _generate_grid(parser, plane, z_pos, grid_points, **grid_kw)
-        xlabel = 'X (Å)' if plane in ['xy', 'xz'] else 'Y (Å)'
-        ylabel = 'Y (Å)' if plane == 'xy' else 'Z (Å)'
+        xlabel = r'X ($\AA$)' if plane in ['xy', 'xz'] else r'Y ($\AA$)'
+        ylabel = r'Y ($\AA$)' if plane == 'xy' else r'Z ($\AA$)'
         zlab = _coords_to_angstrom(np.array([z_pos]))[0]
         suffix = f"{plane}_z{zlab:.2f}"
     return xx, yy, points, xlabel, ylabel, suffix
 
 
 def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indices=None, ext='.wfx',
-                       padding=None, padding_x=None, padding_y=None, x_range=None, y_range=None):
+                       padding=None, padding_x=None, padding_y=None, x_range=None, y_range=None,
+                       show_atom_labels=True, atom_label_color="black", atom_label_size=12,
+                       atom_marker_color="black", atom_marker_size=3, atom_label_offset=0.05):
     """
     Plot a 2D slice of the electron density in the specified plane and position.
 
@@ -494,13 +546,22 @@ def plot_density_slice(parser, plane='xy', z_pos=0.0, grid_points=700, atom_indi
         'Electronic density',
         r'$\log_{10}[\rho]$',
         'viridis', xlabel, ylabel,
-        plane=plane, z_pos=z_pos, atom_indices=atom_indices
+        plane=plane, z_pos=z_pos, atom_indices=atom_indices,
+        show_atom_labels=show_atom_labels,
+        atom_label_color=atom_label_color,
+        atom_label_size=atom_label_size,
+        atom_marker_color=atom_marker_color,
+        atom_marker_size=atom_marker_size,
+        atom_label_offset=atom_label_offset,
     )
 
 def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700,
                                   atom_indices=None, ext='.wfx', fd_step=0.05,
                                   padding=None, padding_x=None, padding_y=None,
-                                  x_range=None, y_range=None):
+                                  x_range=None, y_range=None,
+                                  show_atom_labels=True, atom_label_color="black",
+                                  atom_label_size=12, atom_marker_color="black",
+                                  atom_marker_size=3, atom_label_offset=0.05):
     """
     Plot the magnitude of the 3D gradient of the electronic density (|∇ρ|)
     evaluated in Cartesian space, but displayed on a 2D slice.
@@ -583,14 +644,23 @@ def plot_gradient_magnitude_slice(parser, plane='xy', z_pos=0.0, grid_points=700
         ylabel,
         plane=plane,
         z_pos=z_pos,
-        atom_indices=atom_indices
+        atom_indices=atom_indices,
+        show_atom_labels=show_atom_labels,
+        atom_label_color=atom_label_color,
+        atom_label_size=atom_label_size,
+        atom_marker_color=atom_marker_color,
+        atom_marker_size=atom_marker_size,
+        atom_label_offset=atom_label_offset,
     )
 
 
 def plot_laplacian_slice(parser, ext='.wfx', plane='xy', z_pos=0.0,
                          grid_points=700, atom_indices=None, fd_step=0.08,
                          padding=None, padding_x=None, padding_y=None,
-                         x_range=None, y_range=None, normalize_diverging=True):
+                         x_range=None, y_range=None, normalize_diverging=True,
+                         show_atom_labels=True, atom_label_color="black",
+                         atom_label_size=12, atom_marker_color="black",
+                         atom_marker_size=3, atom_label_offset=0.05):
     """
     Plot a sign-preserving logarithmic map of the 3D Laplacian of the electron
     density, evaluated in Cartesian space, but displayed only on a chosen 2D slice.
@@ -675,11 +745,19 @@ def plot_laplacian_slice(parser, ext='.wfx', plane='xy', z_pos=0.0,
         ylabel,
         plane=plane,
         z_pos=z_pos,
-        atom_indices=atom_indices
+        atom_indices=atom_indices,
+        show_atom_labels=show_atom_labels,
+        atom_label_color=atom_label_color,
+        atom_label_size=atom_label_size,
+        atom_marker_color=atom_marker_color,
+        atom_marker_size=atom_marker_size,
+        atom_label_offset=atom_label_offset,
     )
 
 def plot_spin_density_slice(parser, ext='.wfx', plane='xy', z_pos=0.0, grid_points=700, atom_indices=None,
-                            padding=None, padding_x=None, padding_y=None, x_range=None, y_range=None):
+                            padding=None, padding_x=None, padding_y=None, x_range=None, y_range=None,
+                            show_atom_labels=True, atom_label_color="black", atom_label_size=12,
+                            atom_marker_color="black", atom_marker_size=3, atom_label_offset=0.05):
     """
     Plots a 2D slice of the spin density (ρ_alpha - ρ_beta) in a given molecular plane.
 
@@ -728,7 +806,13 @@ def plot_spin_density_slice(parser, ext='.wfx', plane='xy', z_pos=0.0, grid_poin
         _plot_scalar_field(
             spin, xx_ang, yy_ang, parser, f'spin_density_slice_{suffix}',
             'Spin density', r'$\rho_\alpha - \rho_\beta$', 'seismic', xlabel, ylabel,
-            plane=plane, z_pos=z_pos, atom_indices=atom_indices
+            plane=plane, z_pos=z_pos, atom_indices=atom_indices,
+            show_atom_labels=show_atom_labels,
+            atom_label_color=atom_label_color,
+            atom_label_size=atom_label_size,
+            atom_marker_color=atom_marker_color,
+            atom_marker_size=atom_marker_size,
+            atom_label_offset=atom_label_offset,
         )
 
     elif ext == '.cube':
@@ -740,7 +824,10 @@ def plot_spin_density_slice(parser, ext='.wfx', plane='xy', z_pos=0.0, grid_poin
 def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600,
                                 atom_indices=None, ext='.wfx', fd_step=0.05,
                                 padding=None, padding_x=None, padding_y=None,
-                                x_range=None, y_range=None):
+                                x_range=None, y_range=None,
+                                show_atom_labels=True, atom_label_color="black",
+                                atom_label_size=12, atom_marker_color="black",
+                                atom_marker_size=3, atom_label_offset=0.05):
     """
     Plot the reduced density gradient (RDG) on a 2D slice, using the full 3D
     Cartesian gradient of the electron density.
@@ -820,14 +907,23 @@ def plot_reduced_gradient_slice(parser, plane='xy', z_pos=0.0, grid_points=600,
         ylabel,
         plane=plane,
         z_pos=z_pos,
-        atom_indices=atom_indices
+        atom_indices=atom_indices,
+        show_atom_labels=show_atom_labels,
+        atom_label_color=atom_label_color,
+        atom_label_size=atom_label_size,
+        atom_marker_color=atom_marker_color,
+        atom_marker_size=atom_marker_size,
+        atom_label_offset=atom_label_offset,
     )
 
 
 def plot_s_sign_lambda2_rho_slice(parser, plane='xy', z_pos=0.0, grid_points=600,
                                 atom_indices=None, ext='.wfx',
                                 padding=None, padding_x=None, padding_y=None,
-                                x_range=None, y_range=None, normalize_diverging=True):
+                                x_range=None, y_range=None, normalize_diverging=True,
+                                show_atom_labels=True, atom_label_color="black",
+                                atom_label_size=12, atom_marker_color="black",
+                                atom_marker_size=3, atom_label_offset=0.05):
     """
     Plot the NCI indicator on a 2D slice: sign(lambda2) * log10(rho * s).
 
@@ -874,4 +970,10 @@ def plot_s_sign_lambda2_rho_slice(parser, plane='xy', z_pos=0.0, grid_points=600
         plane=plane,
         z_pos=z_pos,
         atom_indices=atom_indices,
+        show_atom_labels=show_atom_labels,
+        atom_label_color=atom_label_color,
+        atom_label_size=atom_label_size,
+        atom_marker_color=atom_marker_color,
+        atom_marker_size=atom_marker_size,
+        atom_label_offset=atom_label_offset,
     )

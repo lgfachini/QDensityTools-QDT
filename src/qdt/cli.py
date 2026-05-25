@@ -51,6 +51,12 @@ def _grid_kwargs(settings):
         padding_y=settings.SLICE_PADDING_Y,
         x_range=settings.SLICE_X_RANGE,
         y_range=settings.SLICE_Y_RANGE,
+        show_atom_labels=cfg_bool(getattr(settings, "SHOW_ATOM_LABELS", True)),
+        atom_label_color=getattr(settings, "ATOM_LABEL_COLOR", "black"),
+        atom_label_size=getattr(settings, "ATOM_LABEL_SIZE", 12),
+        atom_marker_color=getattr(settings, "ATOM_MARKER_COLOR", "black"),
+        atom_marker_size=getattr(settings, "ATOM_MARKER_SIZE", 3),
+        atom_label_offset=getattr(settings, "ATOM_LABEL_OFFSET", 0.05),
     )
 
 
@@ -62,10 +68,10 @@ def _validate_slice_mode(settings):
 
 
 def _run_slice(name, func, parser, ext, settings, **extra):
-    print(f"\n→ {name}...")
+    print(f"\n-> {name}...")
     _validate_slice_mode(settings)
     func(parser, ext=ext, **_grid_kwargs(settings), **extra)
-    print("✓ done.")
+    print("done.")
 
 
 def main(input_file: Optional[str] = None) -> None:
@@ -106,26 +112,27 @@ def main(input_file: Optional[str] = None) -> None:
         ran = True
 
     if cfg_bool(settings.RUN_PATH_PLOT):
-        print("\n→ path plot...")
+        print("\n-> path plot...")
         plotter.plot_density_gradient_laplacian_along_path(
             parser,
             ext=ext,
             atom1_index=settings.PATH_ATOM1,
             atom2_index=settings.PATH_ATOM2,
             points_count=settings.PATH_POINTS,
+            fd_step=settings.FD_STEP,
         )
-        print("✓ done.")
+        print("done.")
         ran = True
 
     if cfg_bool(settings.RUN_INTEGRATION):
-        print("\n→ electron density integration...")
+        print("\n-> electron density integration...")
         n = integrate_electron_density(
             parser,
             ext=ext,
             grid_points=settings.INTEGRATION_GRID,
             padding=settings.INTEGRATION_PADDING,
         )
-        print(f"✓ Integrated electrons: {n:.4f}")
+        print(f"Integrated electrons: {n:.4f}")
         ran = True
 
     if cfg_bool(settings.RUN_BCP_SEARCH):
@@ -143,7 +150,7 @@ def main(input_file: Optional[str] = None) -> None:
             n_jobs=settings.BCP_N_JOBS,
             export_cube=settings.BCP_EXPORT_CUBE,
         )
-        print("✓ BCP search finished.")
+        print("BCP search finished.")
         ran = True
 
     if not ran:

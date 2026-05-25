@@ -27,3 +27,5 @@ def test_settings_loads():
     settings = import_module("config.settings")
     assert hasattr(settings, "INPUT_FILE")
     assert hasattr(settings, "RUN_NCI_SLICE")
+    assert hasattr(settings, "SHOW_ATOM_LABELS")
+    assert hasattr(settings, "ATOM_LABEL_COLOR")
